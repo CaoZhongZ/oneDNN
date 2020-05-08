@@ -905,9 +905,10 @@ kernel_t *kernel_t::create(const kernel_t::desc_t &desc) {
 static void prb_block_for_cache(tr::prb_t &prb) {
     /* If strides for 0th and 1st nodes are cache friendly
      * then one can altogether do away with blocking ! */
+    const auto ielem_sz = types::data_type_size(prb.itype);
     const bool cache_blocking_needed = false
-            || (prb.nodes[0].is % 64 == 0 && prb.nodes[0].n > 16)
-            || (prb.ndims > 1 && prb.nodes[1].is % 64 == 0
+            || ((prb.nodes[0].is * ielem_sz) % 64 == 0 && prb.nodes[0].n > 16)
+            || (prb.ndims > 1 && (prb.nodes[1].is * ielem_sz) % 64 == 0
                     && prb.nodes[1].n > 16);
     if (!cache_blocking_needed) return;
 
