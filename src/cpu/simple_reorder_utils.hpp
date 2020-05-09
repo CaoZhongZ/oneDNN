@@ -28,17 +28,23 @@ enum instruction_set {
 template <instruction_set>
 class inst_policy;
 
+template <typename T, int instruction_set, int width>
+class ext_reg;
+
+template <> class ext_reg<float, avx, 8> {
+public:
+  typedef __m256 type;
+};
+
+template <> class ext_reg<float, avx, 4> {
+public:
+  typedef __m128 type;
+};
+
 template <> class inst_policy<avx> {
 public:
-  template <int reg_width> struct __reg;
-  template <> struct __reg<8> {
-    typedef __m256 type;
-  };
-  template <> struct __reg<4> {
-    typedef __m128 type;
-  };
-
-  template <int reg_width> using reg_type = typename __reg<reg_width>::type;
+  template <int reg_width, typename T = float> using reg_type
+    = typename ext_reg<T, avx, reg_width>::type;
 
   static constexpr auto max_width = 256 / 8;
 
@@ -63,11 +69,6 @@ public:
   // load<8>
   template <int reg_w>
   static inline reg_type<reg_w> loadu(const float *adrs);
-  template <>
-  inline reg_type<8> loadu<8> (const float *adrs) {
-    return _mm256_loadu_ps(adrs);
-  }
-
   static inline __m256i mask(int l) {
     int32_t mask_src[] = { -1, -1, -1, -1, -1, -1, -1, -1,
        0, 0, 0, 0, 0, 0, 0, 0};
@@ -77,33 +78,39 @@ public:
   // maskload<8>
   template <int reg_w>
   static inline reg_type<reg_w> maskload(const float *adrs, int l);
-  template <>
-  inline reg_type<8> maskload<8> (const float *adrs, int l) {
-    return _mm256_maskload_ps(adrs, mask(l));
-  }
-
   // storeu<8>
   template <int reg_w>
   static inline void storeu(float *, reg_type<reg_w>);
 
-  template <> inline void storeu<8>(float *__p, reg_type<8> __a) {
-    _mm256_storeu_ps(__p, __a);
-  }
-
   // maskload<8>
   template <int reg_w>
   static inline void maskstore(float *adrs, int l, reg_type<reg_w> a);
-  template <>
-  inline void maskstore<8> (float *adrs, int l, reg_type<8> a) {
-    return _mm256_maskstore_ps(adrs, mask(l), a);
-  }
-
   template <int reg_width>
   static inline reg_type<reg_width> broadcast(float scalar);
-  template <> inline reg_type<8> broadcast<8>(float scalar) {
-    return _mm256_set1_ps(scalar);
-  }
 };
+
+template <>
+inline inst_policy<avx>::reg_type<8>
+inst_policy<avx>::loadu<8> (const float *adrs) {
+  return _mm256_loadu_ps(adrs);
+}
+template <>
+inline inst_policy<avx>::reg_type<8>
+inst_policy<avx>::maskload<8> (const float *adrs, int l) {
+  return _mm256_maskload_ps(adrs, mask(l));
+}
+template <>
+inline void inst_policy<avx>::storeu<8>(float *__p, reg_type<8> __a) {
+  _mm256_storeu_ps(__p, __a);
+}
+template <>
+inline void inst_policy<avx>::maskstore<8> (float *adrs, int l, reg_type<8> a) {
+  return _mm256_maskstore_ps(adrs, mask(l), a);
+}
+template <> inline inst_policy<avx>::reg_type<8>
+inst_policy<avx>::broadcast<8>(float scalar) {
+  return _mm256_set1_ps(scalar);
+}
 
 template <> class inst_policy<avx2> : public inst_policy<avx> {};
 template <> class inst_policy<avx512> : public inst_policy<avx2> {
