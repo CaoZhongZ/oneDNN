@@ -834,7 +834,7 @@ struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
             //   transpose in blksize x blksize block
             //
             const auto BH = (pdims[0] * pdims[1]) / blksize;
-            const auto FL = (blk_flat_stride + blksize) / blksize;
+            const auto FL = (blk_flat_stride + blksize -1) / blksize;
             const auto bh_stride = blk_flat_stride * blksize;
 
             // TODO: understand offset0

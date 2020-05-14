@@ -138,10 +138,11 @@ static const impl_list_map_t regular_impl_list_map {
     {{f32, f32, 3}, {
        REG_FAST_DIRECT_COPY_F32_F32_COMMA
 
-       // DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
-
        REG_SR_BIDIR(f32, any, f32, nCw16c),
        REG_SR_BIDIR(f32, any, f32, nCw8c),
+
+       DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
+
        REG_SR_BIDIR(f32, any, f32, nCw4c),
 
        REG_SR_BIDIR(f32, nCw4c, f32, nCw16c),
@@ -165,10 +166,11 @@ static const impl_list_map_t regular_impl_list_map {
 
         REG_FAST_DIRECT_COPY_F32_F32_COMMA
 
-        // DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
-
         REG_SR_BIDIR(f32, any, f32, nChw16c),
         REG_SR_BIDIR(f32, any, f32, nChw8c),
+
+        DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
+
         REG_SR_BIDIR(f32, any, f32, nChw4c),
 
         REG_SR_BIDIR(f32, nChw4c, f32, nChw16c),
@@ -209,11 +211,11 @@ static const impl_list_map_t regular_impl_list_map {
         rnn_weights_reorder_t<f32, f32>::pd_t::create,
 
         REG_FAST_DIRECT_COPY_F32_F32_COMMA
-
-        // DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
-
         REG_SR_BIDIR(f32, any, f32, nCdhw16c),
         REG_SR_BIDIR(f32, any, f32, nCdhw8c),
+
+        DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
+
         REG_SR_BIDIR(f32, any, f32, nCdhw4c),
 
         REG_SR_BIDIR(f32, nCdhw4c, f32, nCdhw16c),
@@ -255,7 +257,7 @@ static const impl_list_map_t regular_impl_list_map {
     {{f32, f32, 6}, {
         REG_FAST_DIRECT_COPY_F32_F32_COMMA
 
-        // DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
+        DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
 
         REG_SR_BIDIR(f32, any, f32, gOIdhw4i4o),
         REG_SR_BIDIR(f32, any, f32, gOIdhw4o4i),
