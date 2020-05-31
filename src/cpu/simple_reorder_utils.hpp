@@ -288,25 +288,6 @@ public:
         default:
           break;
       }
-
-      switch(tail) {
-        case 1:
-          row1 = IO::template zero<8>();
-        case 2:
-          row2 = IO::template zero<8>();
-        case 3:
-          row3 = IO::template zero<8>();
-        case 4:
-          row4 = IO::template zero<8>();
-        case 5:
-          row5 = IO::template zero<8>();
-        case 6:
-          row6 = IO::template zero<8>();
-        case 7:
-          row7 = IO::template zero<8>();
-        default:
-          break;
-      }
     }
 
     auto __t0 = IP::unpacklo(row0, row1);
