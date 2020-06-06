@@ -924,10 +924,10 @@ struct jit_single_blk_kernel : public jit_generator {
                         mayiuse(avx512_core));
         if (!ok) return false;
 
-        auto a = p.nodes[0].n;
+        ssize_t a = p.nodes[0].n;
         auto b = p.nodes[0].is;
         auto c = p.nodes[0].os;
-        auto d = p.nodes[1].n;
+        ssize_t d = p.nodes[1].n;
         auto e = p.nodes[1].is;
         auto f = p.nodes[1].os;
 
@@ -1591,8 +1591,8 @@ struct jit_blk_reorder_t : public primitive_t {
         // Swap last two nodes, put block 4, 8, 16 nodes to first
         //
         static void prb_tile_normalize(tr::prb_t &p) {
-            if (!utils::one_of(p.nodes[0].n, /*4, */ 8, 16)
-                    && utils::one_of(p.nodes[1].n, /*4,*/ 8, 16)) {
+            if (!utils::one_of(p.nodes[0].n, /*4, */ 8ul, 16ul)
+                    && utils::one_of(p.nodes[1].n, /*4,*/ 8ul, 16ul)) {
                 nstl::swap(p.nodes[0], p.nodes[1]);
             }
             // for the case nodes[0] = 16 nodes[1] = 8
