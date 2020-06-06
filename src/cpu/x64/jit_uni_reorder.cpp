@@ -912,8 +912,8 @@ struct jit_single_blk_kernel : public jit_generator {
 
         bool ok = true && p.ndims >= 2 && mayiuse(avx2)
                 && p.scale_type == scale_type_t::NONE
-                && utils::one_of(p.itype, f32/*, bf16, s32, s8, u8*/)
-                && utils::one_of(p.otype, f32/*, bf16, s32, s8, u8*/)
+                && utils::one_of(p.itype, f32 /*, bf16, s32, s8, u8*/)
+                && utils::one_of(p.otype, f32 /*, bf16, s32, s8, u8*/)
                 && IMPLICATION(
                         p.itype == bf16, utils::one_of(p.otype, f32, bf16))
                 && IMPLICATION(
@@ -941,22 +941,23 @@ struct jit_single_blk_kernel : public jit_generator {
          *     m    1    8
          */
         ok = true
-          && (utils::one_of(a, /*4,*/ 8, 16)
-            || utils::one_of(d, /*4,*/ 8, 16))
-          && ((b == 1 && f == 1 && a == e && c == d)
-              || (c == 1 && e == 1 && a == f && b == d));
+                && (utils::one_of(a, /*4,*/ 8, 16)
+                        || utils::one_of(d, /*4,*/ 8, 16))
+                && ((b == 1 && f == 1 && a == e && c == d)
+                        || (c == 1 && e == 1 && a == f && b == d));
 
         return ok;
     }
 
     jit_single_blk_kernel(const tr::prb_t &prb)
-        : jit_generator(), prb_(prb)
+        : jit_generator()
+        , prb_(prb)
         , itype_sz(data_type_size(prb_.itype))
         , otype_sz(data_type_size(prb_.otype)) {
-        auto input_stride = prb_.nodes[0].is != 1 ?
-            prb_.nodes[0].is : prb_.nodes[1].is;
-        auto output_stride = prb_.nodes[0].os != 1 ?
-            prb_.nodes[0].os : prb_.nodes[1].os;
+        auto input_stride
+                = prb_.nodes[0].is != 1 ? prb_.nodes[0].is : prb_.nodes[1].is;
+        auto output_stride
+                = prb_.nodes[0].os != 1 ? prb_.nodes[0].os : prb_.nodes[1].os;
 
         if (input_stride == 8 || output_stride == 8) {
             gen_ker8x8(0, 0, input_stride, output_stride, 8, 8);
@@ -968,27 +969,25 @@ struct jit_single_blk_kernel : public jit_generator {
         uni_vzeroupper();
         ret();
 
-        this->ker_ =
-            (void (*)(const void *, void *, const float *))(getCode());
+        this->ker_ = (void (*)(const void *, void *, const float *))(getCode());
         if (block_sz == 8) {
             auto i_tail = input_stride % 8 != 0 ? input_stride % 8 : 8;
             auto o_tail = output_stride % 8 != 0 ? output_stride % 8 : 8;
             if (i_tail != o_tail) {
                 // Cases either i_tail != 8 or o_tail != 8
-                this->ker_tail_ =
-                    (void (*)(const void *, void *, const float *))(getCurr());
-                gen_ker8x8(0, 0,
-                    input_stride, output_stride, i_tail, o_tail);
+                this->ker_tail_ = (void (*)(
+                        const void *, void *, const float *))(getCurr());
+                gen_ker8x8(0, 0, input_stride, output_stride, i_tail, o_tail);
             }
         } else if (block_sz == 16) {
             auto i_tail = input_stride % 16 != 0 ? input_stride % 16 : 16;
             auto o_tail = output_stride % 16 != 0 ? output_stride % 16 : 16;
             if (i_tail != o_tail) {
                 // Cases either i_tail != 16 or o_tail != 16
-                this->ker_tail_ =
-                    (void (*)(const void *, void *, const float *))(getCurr());
+                this->ker_tail_ = (void (*)(
+                        const void *, void *, const float *))(getCurr());
                 gen_ker16x16_in_8x8(
-                    input_stride, output_stride, i_tail, o_tail);
+                        input_stride, output_stride, i_tail, o_tail);
             } // else we don't need handle tail situation
         }
         uni_vzeroupper();
@@ -1009,40 +1008,40 @@ struct jit_single_blk_kernel : public jit_generator {
     inline void gen_loadu(const Ymm &ymm, const Address &addr, int size) {
         Xmm xmm(ymm.getIdx());
         switch (size) {
-        case 32: vmovups(ymm, addr); break;
-        case 16: vmovups(xmm, addr); break;
-        default: assert(!"unreachable");
+            case 32: vmovups(ymm, addr); break;
+            case 16: vmovups(xmm, addr); break;
+            default: assert(!"unreachable");
         }
     }
 
     inline void gen_storeu(const Address &addr, const Ymm &ymm, int size) {
         Xmm xmm(ymm.getIdx());
         switch (size) {
-        case 32: vmovups(addr, ymm); break;
-        case 16: vmovups(addr, xmm); break;
-        default: assert(!"unreachable");
+            case 32: vmovups(addr, ymm); break;
+            case 16: vmovups(addr, xmm); break;
+            default: assert(!"unreachable");
         }
     }
 
     inline void gen_maskloadu(
-        const Ymm &ymm, const Address &addr, const Ymm mask, int size) {
+            const Ymm &ymm, const Address &addr, const Ymm mask, int size) {
         Xmm xmm(ymm.getIdx());
         Xmm mask128(mask.getIdx());
         switch (size) {
-        case 32: vmaskmovps(ymm, mask, addr); break;
-        case 16: vmaskmovps(xmm, mask128, addr); break;
-        default: assert(!"unreachable");
+            case 32: vmaskmovps(ymm, mask, addr); break;
+            case 16: vmaskmovps(xmm, mask128, addr); break;
+            default: assert(!"unreachable");
         }
     }
 
     inline void gen_maskstoreu(
-        const Address &addr, const Ymm &ymm, const Ymm mask, int size) {
+            const Address &addr, const Ymm &ymm, const Ymm mask, int size) {
         Xmm xmm(ymm.getIdx());
         Xmm mask128(mask.getIdx());
         switch (size) {
-        case 32: vmaskmovps(addr, mask, ymm); break;
-        case 16: vmaskmovps(addr, mask128, xmm); break;
-        default: assert(!"unreachable");
+            case 32: vmaskmovps(addr, mask, ymm); break;
+            case 16: vmaskmovps(addr, mask128, xmm); break;
+            default: assert(!"unreachable");
         }
     }
 
@@ -1076,8 +1075,7 @@ struct jit_single_blk_kernel : public jit_generator {
     // or nChw()C -> nchw
     //
     void gen_setmask(int tail) {
-        if (tail == 8)
-            return;
+        if (tail == 8) return;
         // all 0
         vxorps(ymm_tmp, ymm_tmp, ymm_tmp);
         // all 1
@@ -1093,43 +1091,35 @@ struct jit_single_blk_kernel : public jit_generator {
     // stride in element number
     //
     // Gen specific 8x8 transform respect to certain tail condition
-    void gen_tr8x8(int i_off,
-        int o_off,
-        int input_stride,
-        int output_stride, int in_tail, int out_tail) {
+    void gen_tr8x8(int i_off, int o_off, int input_stride, int output_stride,
+            int in_tail, int out_tail) {
         constexpr int lane = 8;
 
-        if (in_tail == 0 || out_tail == 0)
-            return;
+        if (in_tail == 0 || out_tail == 0) return;
 
-        for (int i = 0; i < out_tail; ++ i) {
+        for (int i = 0; i < out_tail; ++i) {
             if (in_tail != lane) {
-                gen_maskloadu(
-                    Ymm(i),
-                    ptr[reg_ptr_in + i_off + i * input_stride * itype_sz],
-                    ymm_mask, lane * itype_sz);
+                gen_maskloadu(Ymm(i),
+                        ptr[reg_ptr_in + i_off + i * input_stride * itype_sz],
+                        ymm_mask, lane * itype_sz);
             } else {
-                gen_loadu(
-                    Ymm(i),
-                    ptr[reg_ptr_in + i_off + i * input_stride * itype_sz],
-                    lane * itype_sz);
+                gen_loadu(Ymm(i),
+                        ptr[reg_ptr_in + i_off + i * input_stride * itype_sz],
+                        lane * itype_sz);
             }
         }
 
         gen_transpose_8x8();
 
-        for (int i = 0; i < in_tail; ++ i) {
+        for (int i = 0; i < in_tail; ++i) {
             if (out_tail == lane) {
                 gen_storeu(
-                    ptr[reg_ptr_out + o_off + i * output_stride * otype_sz],
-                    Ymm(i),
-                    lane * otype_sz);
+                        ptr[reg_ptr_out + o_off + i * output_stride * otype_sz],
+                        Ymm(i), lane * otype_sz);
             } else {
                 gen_maskstoreu(
-                    ptr[reg_ptr_out + o_off + i * output_stride * otype_sz],
-                    Ymm(i),
-                    ymm_mask,
-                    lane * otype_sz);
+                        ptr[reg_ptr_out + o_off + i * output_stride * otype_sz],
+                        Ymm(i), ymm_mask, lane * otype_sz);
             }
         }
     }
@@ -1137,97 +1127,66 @@ struct jit_single_blk_kernel : public jit_generator {
     // tail: 0 ~ 8
     // support:
     //    either in_tail or out_tail is not 8, but not both
-    void gen_ker8x8(int i_off, int o_off,
-        int input_stride, int output_stride, int in_tail, int out_tail) {
+    void gen_ker8x8(int i_off, int o_off, int input_stride, int output_stride,
+            int in_tail, int out_tail) {
         gen_tr8x8(i_off, o_off, input_stride, output_stride, in_tail, out_tail);
     }
 
-    void gen_ker16x16_in_8x8(
-            int input_stride, int output_stride) {
+    void gen_ker16x16_in_8x8(int input_stride, int output_stride) {
         const auto lane = 16;
-        const auto sub_lane = lane/2;
-        gen_ker8x8(0, 0,
-            input_stride, output_stride,
-            sub_lane, sub_lane);
-        gen_ker8x8(input_stride * sub_lane * itype_sz,
-            sub_lane * otype_sz,
-            input_stride, output_stride,
-            sub_lane, sub_lane);
-        gen_ker8x8(sub_lane * itype_sz,
-            output_stride * sub_lane * otype_sz,
-            input_stride, output_stride,
-            sub_lane, sub_lane);
+        const auto sub_lane = lane / 2;
+        gen_ker8x8(0, 0, input_stride, output_stride, sub_lane, sub_lane);
+        gen_ker8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
+                input_stride, output_stride, sub_lane, sub_lane);
+        gen_ker8x8(sub_lane * itype_sz, output_stride * sub_lane * otype_sz,
+                input_stride, output_stride, sub_lane, sub_lane);
         gen_ker8x8((input_stride * sub_lane + sub_lane) * itype_sz,
-            (output_stride * sub_lane + sub_lane) * otype_sz,
-            input_stride, output_stride,
-            sub_lane, sub_lane);
+                (output_stride * sub_lane + sub_lane) * otype_sz, input_stride,
+                output_stride, sub_lane, sub_lane);
     }
 
     // tail can be 1 ~ 16, using avx2 for now
     void gen_ker16x16_in_8x8(
-        int input_stride, int output_stride, int in_tail, int out_tail) {
+            int input_stride, int output_stride, int in_tail, int out_tail) {
         constexpr auto lane = 16;
-        constexpr auto sub_lane = lane/2;
+        constexpr auto sub_lane = lane / 2;
         auto tail = in_tail != lane ? in_tail : out_tail;
 
         const auto l_tail = tail < sub_lane ? tail : sub_lane;
         const auto u_tail = tail < sub_lane ? 0 : tail - sub_lane;
 
         if (tail == in_tail) {
-            gen_ker8x8(
-                0, 0,
-                input_stride, output_stride,
-                l_tail, sub_lane);
-            gen_ker8x8(
-                input_stride * sub_lane * itype_sz,
-                sub_lane * otype_sz,
-                input_stride, output_stride,
-                l_tail, sub_lane);
-            gen_ker8x8(
-                sub_lane * itype_sz,
-                output_stride * sub_lane * otype_sz,
-                input_stride, output_stride,
-                u_tail, sub_lane);
-            gen_ker8x8(
-                itype_sz * (input_stride * sub_lane + sub_lane),
-                otype_sz * (output_stride * sub_lane + sub_lane),
-                input_stride, output_stride,
-                u_tail, sub_lane);
+            gen_ker8x8(0, 0, input_stride, output_stride, l_tail, sub_lane);
+            gen_ker8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
+                    input_stride, output_stride, l_tail, sub_lane);
+            gen_ker8x8(sub_lane * itype_sz, output_stride * sub_lane * otype_sz,
+                    input_stride, output_stride, u_tail, sub_lane);
+            gen_ker8x8(itype_sz * (input_stride * sub_lane + sub_lane),
+                    otype_sz * (output_stride * sub_lane + sub_lane),
+                    input_stride, output_stride, u_tail, sub_lane);
         } else {
-            gen_ker8x8(
-                0, 0,
-                input_stride, output_stride,
-                sub_lane, l_tail);
-            gen_ker8x8(
-                input_stride * sub_lane * itype_sz,
-                sub_lane * otype_sz,
-                input_stride, output_stride,
-                sub_lane, u_tail);
-            gen_ker8x8(
-                sub_lane * itype_sz,
-                output_stride * sub_lane * itype_sz,
-                input_stride, output_stride,
-                sub_lane, l_tail);
-            gen_ker8x8(
-                itype_sz * (input_stride * sub_lane + sub_lane),
-                otype_sz * (output_stride * sub_lane + sub_lane),
-                input_stride, output_stride,
-                sub_lane, u_tail);
+            gen_ker8x8(0, 0, input_stride, output_stride, sub_lane, l_tail);
+            gen_ker8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
+                    input_stride, output_stride, sub_lane, u_tail);
+            gen_ker8x8(sub_lane * itype_sz, output_stride * sub_lane * itype_sz,
+                    input_stride, output_stride, sub_lane, l_tail);
+            gen_ker8x8(itype_sz * (input_stride * sub_lane + sub_lane),
+                    otype_sz * (output_stride * sub_lane + sub_lane),
+                    input_stride, output_stride, sub_lane, u_tail);
         }
     }
 
-    inline void operator() (
-        const void *in, void *out, const float *scale, bool tail) const {
+    inline void operator()(
+            const void *in, void *out, const float *scale, bool tail) const {
         if (tail)
-          ker_tail_(in, out, scale);
+            ker_tail_(in, out, scale);
         else
-          ker_(in, out, scale);
+            ker_(in, out, scale);
     }
 
     // Mask is fixed inside code
-    inline void set_mask() {
-        set_mask_();
-    }
+    inline void set_mask() { set_mask_(); }
+
 private:
     const prb_t &prb_;
     void (*ker_)(const void *, void *, const float *);
@@ -1633,7 +1592,7 @@ struct jit_blk_reorder_t : public primitive_t {
         //
         static void prb_tile_normalize(tr::prb_t &p) {
             if (!utils::one_of(p.nodes[0].n, /*4, */ 8, 16)
-                && utils::one_of(p.nodes[1].n, /*4,*/ 8, 16)) {
+                    && utils::one_of(p.nodes[1].n, /*4,*/ 8, 16)) {
                 nstl::swap(p.nodes[0], p.nodes[1]);
             }
             // for the case nodes[0] = 16 nodes[1] = 8
@@ -1723,14 +1682,13 @@ struct jit_blk_reorder_t : public primitive_t {
         // Which means there is a tail
         auto &prb = this->pd()->prb_;
         ptrdiff_t BH = 1;
-        for (int i = 2; i < prb.ndims; ++i ) {
+        for (int i = 2; i < prb.ndims; ++i) {
             BH *= prb.nodes[i].n;
         }
 
         auto block_sz = n(0);
-        auto FL = (n(1) + block_sz -1) / block_sz;
-        auto bh_stride = BH == 1 ?
-            0 /* don't care, and no is(2) */ : is(2);
+        auto FL = (n(1) + block_sz - 1) / block_sz;
+        auto bh_stride = BH == 1 ? 0 /* don't care, and no is(2) */ : is(2);
 
         auto itype_sz = data_type_size(pd()->prb_.itype);
         auto otype_sz = data_type_size(pd()->prb_.otype);
@@ -1746,6 +1704,7 @@ struct jit_blk_reorder_t : public primitive_t {
 
         return status::success;
     }
+
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
     std::unique_ptr<tr::jit_single_blk_kernel> kernel_;
@@ -1758,8 +1717,8 @@ status_t jit_uni_reorder_create(reorder_pd_t **reorder_pd, engine_t *engine,
     auto ret = jit_blk_reorder_t::pd_t::create(
             reorder_pd, engine, attr, src_engine, src_md, dst_engine, dst_md);
     if (status::success != ret)
-        ret = jit_uni_reorder_t::pd_t::create(
-            reorder_pd, engine, attr, src_engine, src_md, dst_engine, dst_md);
+        ret = jit_uni_reorder_t::pd_t::create(reorder_pd, engine, attr,
+                src_engine, src_md, dst_engine, dst_md);
     return ret;
 }
 
