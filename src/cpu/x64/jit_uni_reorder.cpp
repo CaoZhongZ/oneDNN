@@ -911,6 +911,7 @@ struct jit_single_blk_kernel : public jit_generator {
         using namespace data_type;
 
         bool ok = true && p.ndims >= 2 && mayiuse(avx2)
+                && p.scale_type == scale_type_t::NONE
                 && utils::one_of(p.itype, f32/*, bf16, s32, s8, u8*/)
                 && utils::one_of(p.otype, f32/*, bf16, s32, s8, u8*/)
                 && IMPLICATION(
