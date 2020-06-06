@@ -941,10 +941,10 @@ struct jit_single_blk_kernel : public jit_generator {
          *     m    1    8
          */
         ok = true
-          && (utils::one_of(a, /*4,*/ 8, 16)
-            || utils::one_of(d, /*4,*/ 8, 16))
-          && ((b == 1 && f == 1 && a == e && c == d)
-              || (c == 1 && e == 1 && a == f && b == d));
+                && (utils::one_of(a, /*4,*/ 8, 16)
+                        || utils::one_of(d, /*4,*/ 8, 16))
+                && ((b == 1 && f == 1 && a == e && c == d)
+                        || (c == 1 && e == 1 && a == f && b == d));
         if (!ok) return false;
 
         // Do not handle transpose of dimensions other than last 2
@@ -961,19 +961,24 @@ struct jit_single_blk_kernel : public jit_generator {
     jit_single_blk_kernel(const tr::prb_t &prb)
         : jit_generator()
         , prb_(prb)
+        , ker_(nullptr)
+        , ker_tail_(nullptr)
         , itype_sz(data_type_size(prb_.itype))
-        , otype_sz(data_type_size(prb_.otype)) {
+        , otype_sz(data_type_size(prb_.otype))
+        , block_sz(prb.nodes[0].n) {
         auto input_stride
                 = prb_.nodes[0].is != 1 ? prb_.nodes[0].is : prb_.nodes[1].is;
         auto output_stride
                 = prb_.nodes[0].os != 1 ? prb_.nodes[0].os : prb_.nodes[1].os;
 
-        if (input_stride == 8 || output_stride == 8) {
+        if (block_sz == 8) {
             gen_ker8x8(0, 0, input_stride, output_stride, 8, 8);
             block_sz = 8;
-        } else if (input_stride == 16 || output_stride == 16) {
+        } else if (block_sz == 16) {
             gen_ker16x16_in_8x8(input_stride, output_stride);
             block_sz = 16;
+        } else {
+            assert(!"unimplemented");
         }
         uni_vzeroupper();
         ret();
@@ -998,6 +1003,8 @@ struct jit_single_blk_kernel : public jit_generator {
                 gen_ker16x16_in_8x8(
                         input_stride, output_stride, i_tail, o_tail);
             } // else we don't need handle tail situation
+        } else {
+            assert(!"unimplemented");
         }
         uni_vzeroupper();
         ret();
@@ -1193,8 +1200,15 @@ struct jit_single_blk_kernel : public jit_generator {
             ker_(in, out, scale);
     }
 
+    inline void operator()(
+            const void *in, void *out, const float *scale) const {
+        ker_(in, out, scale);
+    }
+
     // Mask is fixed inside code
     inline void set_mask() { set_mask_(); }
+
+    inline bool has_tail() { return this->ker_tail_ != nullptr; }
 
 private:
     const prb_t &prb_;
@@ -1204,7 +1218,7 @@ private:
 
     int itype_sz;
     int otype_sz;
-    int block_sz = 0;
+    int block_sz;
 
     Reg64 reg_ptr_in = rdi;
     Reg64 reg_ptr_out = rsi;
@@ -1702,14 +1716,24 @@ struct jit_blk_reorder_t : public primitive_t {
         auto itype_sz = data_type_size(pd()->prb_.itype);
         auto otype_sz = data_type_size(pd()->prb_.otype);
 
-        kernel_->set_mask();
-        parallel_nd(BH, FL, [&](dim_t bh, dim_t fl) {
-            auto fl_b = fl * block_sz;
-            auto bh_b = bh_stride * bh;
-            auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
-            auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
-            (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
-        });
+        if (kernel_->has_tail()) {
+            kernel_->set_mask();
+            parallel_nd(BH, FL, [&](dim_t bh, dim_t fl) {
+                auto fl_b = fl * block_sz;
+                auto bh_b = bh_stride * bh;
+                auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
+                auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
+                (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
+            });
+        } else {
+            parallel_nd(BH, FL, [&](dim_t bh, dim_t fl) {
+                auto fl_b = fl * block_sz;
+                auto bh_b = bh_stride * bh;
+                auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
+                auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
+                (*kernel_)(i, o, nullptr);
+            });
+        }
 
         return status::success;
     }
