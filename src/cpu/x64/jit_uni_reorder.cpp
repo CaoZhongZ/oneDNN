@@ -941,10 +941,19 @@ struct jit_single_blk_kernel : public jit_generator {
          *     m    1    8
          */
         ok = true
-                && (utils::one_of(a, /*4,*/ 8, 16)
-                        || utils::one_of(d, /*4,*/ 8, 16))
-                && ((b == 1 && f == 1 && a == e && c == d)
-                        || (c == 1 && e == 1 && a == f && b == d));
+          && (utils::one_of(a, /*4,*/ 8, 16)
+            || utils::one_of(d, /*4,*/ 8, 16))
+          && ((b == 1 && f == 1 && a == e && c == d)
+              || (c == 1 && e == 1 && a == f && b == d));
+        if (!ok) return false;
+
+        // Do not handle transpose of dimensions other than last 2
+        for (int i = 2; i < p.ndims; ++i) {
+            if (p.nodes[i].is != p.nodes[i].os) {
+                ok = false;
+                break;
+            }
+        }
 
         return ok;
     }
