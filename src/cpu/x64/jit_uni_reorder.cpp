@@ -919,7 +919,7 @@ struct jit_single_blk_kernel : public jit_generator {
                 && IMPLICATION(
                         p.otype == bf16, utils::one_of(p.itype, f32, bf16))
                 && utils::everyone_is(0, p.ioff, p.ooff) /* do we need this? */
-                && utils::one_of(p.beta, 0.f/*, 1.f*/) /* anything else? */
+                && utils::one_of(p.beta, 0.f /*, 1.f*/) /* anything else? */
                 && IMPLICATION((p.itype == bf16 || p.otype == bf16),
                         mayiuse(avx512_core));
         if (!ok) return false;
@@ -1717,12 +1717,12 @@ struct jit_blk_reorder_t : public primitive_t {
         auto otype_sz = data_type_size(pd()->prb_.otype);
 
         if (kernel_->has_tail()) {
-            kernel_->set_mask();
             parallel_nd(BH, FL, [&](dim_t bh, dim_t fl) {
                 auto fl_b = fl * block_sz;
                 auto bh_b = bh_stride * bh;
                 auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
                 auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
+                kernel_->set_mask();
                 (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
             });
         } else {
