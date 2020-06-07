@@ -1220,9 +1220,15 @@ private:
     int otype_sz;
     int block_sz;
 
+#ifdef _WIN32
+    Reg64 reg_ptr_in = rcx;
+    Reg64 reg_ptr_out = rdx;
+    Reg64 reg_ptr_scale = r8;
+#else
     Reg64 reg_ptr_in = rdi;
     Reg64 reg_ptr_out = rsi;
     Reg64 reg_ptr_scale = rdx;
+#endif
 
     Ymm ymm_mask = ymm15;
     Ymm ymm_tmp = ymm14;
