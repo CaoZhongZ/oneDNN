@@ -919,7 +919,7 @@ struct jit_single_blk_kernel : public jit_generator {
                 && IMPLICATION(
                         p.otype == bf16, utils::one_of(p.itype, f32, bf16))
                 && utils::everyone_is(0, p.ioff, p.ooff) /* do we need this? */
-                && utils::one_of(p.beta, 0.f, 1.f) /* anything else? */
+                && utils::one_of(p.beta, 0.f/*, 1.f*/) /* anything else? */
                 && IMPLICATION((p.itype == bf16 || p.otype == bf16),
                         mayiuse(avx512_core));
         if (!ok) return false;
