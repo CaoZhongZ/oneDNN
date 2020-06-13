@@ -980,7 +980,6 @@ struct jit_single_blk_kernel : public jit_generator {
         } else {
             assert(!"unimplemented");
         }
-        uni_vzeroupper();
         ret();
 
         this->ker_ = (void (*)(const void *, void *, const float *))(getCode());
@@ -1006,7 +1005,6 @@ struct jit_single_blk_kernel : public jit_generator {
         } else {
             assert(!"unimplemented");
         }
-        uni_vzeroupper();
         ret();
 
         this->set_mask_ = (void (*)())(getCurr());
@@ -1017,7 +1015,10 @@ struct jit_single_blk_kernel : public jit_generator {
             gen_setmask(i_tail);
         else
             gen_setmask(o_tail);
-        uni_vzeroupper();
+        ret();
+
+        this->vzeroupper_ = (void (*)())(getCurr());
+        vzeroupper();
         ret();
     }
 
@@ -1207,7 +1208,7 @@ struct jit_single_blk_kernel : public jit_generator {
 
     // Mask is fixed inside code
     inline void set_mask() { set_mask_(); }
-
+    inline void clean_avx() { vzeroupper_(); }
     inline bool has_tail() { return this->ker_tail_ != nullptr; }
 
 private:
@@ -1215,6 +1216,10 @@ private:
     void (*ker_)(const void *, void *, const float *);
     void (*ker_tail_)(const void *, void *, const float *);
     void (*set_mask_)();
+
+    // multiple kernels,
+    // better left this job done last instead of in the middle.
+    void (*vzeroupper_)();
 
     int itype_sz;
     int otype_sz;
@@ -1723,22 +1728,34 @@ struct jit_blk_reorder_t : public primitive_t {
         auto otype_sz = data_type_size(pd()->prb_.otype);
 
         if (kernel_->has_tail()) {
-            parallel_nd(BH, FL, [&](dim_t bh, dim_t fl) {
-                auto fl_b = fl * block_sz;
-                auto bh_b = bh_stride * bh;
-                auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
-                auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
-                kernel_->set_mask();
-                (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
-            });
+            const size_t work_amount = (size_t)BH * FL;
+            int nthr = adjust_num_threads(dnnl_get_max_threads(), work_amount);
+            if (nthr)
+                parallel(nthr, [&](int ithr, int nthr) {
+                    kernel_->set_mask();
+                    for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
+                        auto fl_b = fl * block_sz;
+                        auto bh_b = bh_stride * bh;
+                        auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
+                        auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
+                        (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
+                    });
+                    kernel_->clean_avx();
+                });
         } else {
-            parallel_nd(BH, FL, [&](dim_t bh, dim_t fl) {
-                auto fl_b = fl * block_sz;
-                auto bh_b = bh_stride * bh;
-                auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
-                auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
-                (*kernel_)(i, o, nullptr);
-            });
+            const size_t work_amount = (size_t)BH * FL;
+            int nthr = adjust_num_threads(dnnl_get_max_threads(), work_amount);
+            if (nthr)
+                parallel(nthr, [&](int ithr, int nthr) {
+                    for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
+                        auto fl_b = fl * block_sz;
+                        auto bh_b = bh_stride * bh;
+                        auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
+                        auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
+                        (*kernel_)(i, o, nullptr);
+                    });
+                    kernel_->clean_avx();
+                });
         }
 
         return status::success;
