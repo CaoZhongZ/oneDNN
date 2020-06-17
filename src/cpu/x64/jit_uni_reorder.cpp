@@ -912,24 +912,18 @@ struct jit_single_blk_kernel : public jit_generator {
 
         bool ok = true && p.ndims >= 2 && mayiuse(avx2)
                 && p.scale_type == scale_type_t::NONE
-                && utils::one_of(p.itype, f32 /*, bf16, s32, s8, u8*/)
-                && utils::one_of(p.otype, f32 /*, bf16, s32, s8, u8*/)
-                && IMPLICATION(
-                        p.itype == bf16, utils::one_of(p.otype, f32, bf16))
-                && IMPLICATION(
-                        p.otype == bf16, utils::one_of(p.itype, f32, bf16))
-                && utils::everyone_is(0, p.ioff, p.ooff) /* do we need this? */
-                && utils::one_of(p.beta, 0.f /*, 1.f*/) /* anything else? */
-                && IMPLICATION((p.itype == bf16 || p.otype == bf16),
-                        mayiuse(avx512_core));
+                && utils::one_of(p.itype, f32)
+                && utils::one_of(p.otype, f32)
+                && utils::everyone_is(0, p.ioff, p.ooff)
+                && p.beta == 0.f;
         if (!ok) return false;
 
-        int64_t a = p.nodes[0].n;
-        auto b = p.nodes[0].is;
-        auto c = p.nodes[0].os;
-        int64_t d = p.nodes[1].n;
-        auto e = p.nodes[1].is;
-        auto f = p.nodes[1].os;
+        int64_t n0 = p.nodes[0].n;
+        auto i0 = p.nodes[0].is;
+        auto o0 = p.nodes[0].os;
+        int64_t n1 = p.nodes[1].n;
+        auto i1 = p.nodes[1].is;
+        auto o1 = p.nodes[1].os;
 
         /*
          * for a tranpose of plain to 8c case, nodes would be like:
@@ -941,10 +935,10 @@ struct jit_single_blk_kernel : public jit_generator {
          *     m    1    8
          */
         ok = true
-                && (utils::one_of(a, /*4,*/ 8, 16)
-                        || utils::one_of(d, /*4,*/ 8, 16))
-                && ((b == 1 && f == 1 && a == e && c == d)
-                        || (c == 1 && e == 1 && a == f && b == d));
+                && (utils::one_of(n0, 8, 16)
+                        || utils::one_of(n1, 8, 16))
+                && ((i0 == 1 && o1 == 1 && n0 == i1 && o0 == n1)
+                        || (o0 == 1 && i1 == 1 && n0 == o1 && i0 == n1));
         if (!ok) return false;
 
         // Do not handle transpose of dimensions other than last 2
@@ -982,12 +976,10 @@ struct jit_single_blk_kernel : public jit_generator {
         }
         ret();
 
-        this->ker_ = (void (*)(const void *, void *, const float *))(getCode());
         if (block_sz == 8) {
             auto i_tail = input_stride % 8 != 0 ? input_stride % 8 : 8;
             auto o_tail = output_stride % 8 != 0 ? output_stride % 8 : 8;
             if (i_tail != o_tail) {
-                // Cases either i_tail != 8 or o_tail != 8
                 this->ker_tail_ = (void (*)(
                         const void *, void *, const float *))(getCurr());
                 gen_ker8x8(0, 0, input_stride, output_stride, i_tail, o_tail);
@@ -1020,9 +1012,10 @@ struct jit_single_blk_kernel : public jit_generator {
         this->vzeroupper_ = (void (*)())(getCurr());
         vzeroupper();
         ret();
+        this->ker_ = (void (*)(const void *, void *, const float *))(getCode());
     }
 
-    inline void gen_loadu(const Ymm &ymm, const Address &addr, int size) {
+    void gen_loadu(const Ymm &ymm, const Address &addr, int size) {
         Xmm xmm(ymm.getIdx());
         switch (size) {
             case 32: vmovups(ymm, addr); break;
@@ -1031,7 +1024,7 @@ struct jit_single_blk_kernel : public jit_generator {
         }
     }
 
-    inline void gen_storeu(const Address &addr, const Ymm &ymm, int size) {
+    void gen_storeu(const Address &addr, const Ymm &ymm, int size) {
         Xmm xmm(ymm.getIdx());
         switch (size) {
             case 32: vmovups(addr, ymm); break;
@@ -1040,7 +1033,7 @@ struct jit_single_blk_kernel : public jit_generator {
         }
     }
 
-    inline void gen_maskloadu(
+    void gen_maskloadu(
             const Ymm &ymm, const Address &addr, const Ymm mask, int size) {
         Xmm xmm(ymm.getIdx());
         Xmm mask128(mask.getIdx());
@@ -1051,7 +1044,7 @@ struct jit_single_blk_kernel : public jit_generator {
         }
     }
 
-    inline void gen_maskstoreu(
+    void gen_maskstoreu(
             const Address &addr, const Ymm &ymm, const Ymm mask, int size) {
         Xmm xmm(ymm.getIdx());
         Xmm mask128(mask.getIdx());
@@ -1193,7 +1186,7 @@ struct jit_single_blk_kernel : public jit_generator {
         }
     }
 
-    inline void operator()(
+    void operator()(
             const void *in, void *out, const float *scale, bool tail) const {
         if (tail)
             ker_tail_(in, out, scale);
@@ -1201,15 +1194,15 @@ struct jit_single_blk_kernel : public jit_generator {
             ker_(in, out, scale);
     }
 
-    inline void operator()(
+    void operator()(
             const void *in, void *out, const float *scale) const {
         ker_(in, out, scale);
     }
 
     // Mask is fixed inside code
-    inline void set_mask() { set_mask_(); }
-    inline void clean_avx() { vzeroupper_(); }
-    inline bool has_tail() { return this->ker_tail_ != nullptr; }
+    void set_mask() { set_mask_(); }
+    void clean_avx() { vzeroupper_(); }
+    bool has_tail() { return this->ker_tail_ != nullptr; }
 
 private:
     const prb_t &prb_;
@@ -1225,15 +1218,9 @@ private:
     int otype_sz;
     int block_sz;
 
-#ifdef _WIN32
-    Reg64 reg_ptr_in = rcx;
-    Reg64 reg_ptr_out = rdx;
-    Reg64 reg_ptr_scale = r8;
-#else
-    Reg64 reg_ptr_in = rdi;
-    Reg64 reg_ptr_out = rsi;
-    Reg64 reg_ptr_scale = rdx;
-#endif
+    Reg64 reg_ptr_in = abi_param1;
+    Reg64 reg_ptr_out = abi_param2;
+    Reg64 reg_ptr_scale = abi_param3;
 
     Ymm ymm_mask = ymm15;
     Ymm ymm_tmp = ymm14;
@@ -1690,27 +1677,22 @@ struct jit_blk_reorder_t : public primitive_t {
         kernel_ = utils::make_unique<tr::jit_single_blk_kernel>(pd()->prb_);
     }
 
-    inline int n(int d) const {
+    int n(int d) const {
         assert(d < pd()->prb_.ndims);
         return (int)pd()->prb_.nodes[d].n;
     }
-    inline int is(int d) const {
+    int is(int d) const {
         assert(d < pd()->prb_.ndims);
         return (int)pd()->prb_.nodes[d].is;
     }
-    inline int os(int d) const {
+    int os(int d) const {
         assert(d < pd()->prb_.ndims);
         return (int)pd()->prb_.nodes[d].os;
-    }
-    inline int ss(int d) const {
-        assert(d < pd()->prb_.ndims);
-        return (int)pd()->prb_.nodes[d].ss;
     }
 
     status_t execute(const exec_ctx_t &ctx) const override {
         auto in = CTX_IN_MEM(const char *, DNNL_ARG_FROM);
         auto out = CTX_OUT_MEM(char *, DNNL_ARG_TO);
-        DEFINE_SCALES_BUFFER(scales);
 
         // kernel handle 2-dimension tiles
         // Which means there is a tail
