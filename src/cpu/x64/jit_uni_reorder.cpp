@@ -965,6 +965,7 @@ struct jit_single_blk_kernel : public jit_generator {
         auto output_stride
                 = prb_.nodes[0].os != 1 ? prb_.nodes[0].os : prb_.nodes[1].os;
 
+        auto ker_off = getSize();
         if (block_sz == 8) {
             gen_ker8x8(0, 0, input_stride, output_stride, 8, 8);
             block_sz = 8;
@@ -976,12 +977,19 @@ struct jit_single_blk_kernel : public jit_generator {
         }
         ret();
 
+        auto ker_tail_off = getSize();
+        auto i_tail = input_stride % 8;
+        auto o_tail = output_stride % 8;
+
+        if (i_tail != 0)
+            gen_setmask(i_tail);
+        else
+            gen_setmask(o_tail);
+
         if (block_sz == 8) {
             auto i_tail = input_stride % 8 != 0 ? input_stride % 8 : 8;
             auto o_tail = output_stride % 8 != 0 ? output_stride % 8 : 8;
             if (i_tail != o_tail) {
-                this->ker_tail_ = (void (*)(
-                        const void *, void *, const float *))(getCurr());
                 gen_ker8x8(0, 0, input_stride, output_stride, i_tail, o_tail);
             }
         } else if (block_sz == 16) {
@@ -989,8 +997,6 @@ struct jit_single_blk_kernel : public jit_generator {
             auto o_tail = output_stride % 16 != 0 ? output_stride % 16 : 16;
             if (i_tail != o_tail) {
                 // Cases either i_tail != 16 or o_tail != 16
-                this->ker_tail_ = (void (*)(
-                        const void *, void *, const float *))(getCurr());
                 gen_ker16x16_in_8x8(
                         input_stride, output_stride, i_tail, o_tail);
             } // else we don't need handle tail situation
@@ -999,20 +1005,14 @@ struct jit_single_blk_kernel : public jit_generator {
         }
         ret();
 
-        this->set_mask_ = (void (*)())(getCurr());
-        auto i_tail = input_stride % 8;
-        auto o_tail = output_stride % 8;
-
-        if (i_tail != 0)
-            gen_setmask(i_tail);
-        else
-            gen_setmask(o_tail);
-        ret();
-
-        this->vzeroupper_ = (void (*)())(getCurr());
+        auto vzeroupper_off = getSize();
         vzeroupper();
         ret();
-        this->ker_ = (void (*)(const void *, void *, const float *))(getCode());
+
+        auto ker_start = getCode();
+        this->ker_ = (void (*)(const void *, void *, const float *))(ker_start + ker_off);
+        this->ker_tail_ = (void (*)(const void *, void *, const float *))(ker_start + ker_tail_off);
+        this->vzeroupper_ =  (void (*)())(ker_start + vzeroupper_off);
     }
 
     void gen_loadu(const Ymm &ymm, const Address &addr, int size) {
@@ -1086,12 +1086,11 @@ struct jit_single_blk_kernel : public jit_generator {
     //
     void gen_setmask(int tail) {
         if (tail == 8) return;
-        // all 0
+        // all 0, all 1
         vxorps(ymm_tmp, ymm_tmp, ymm_tmp);
-        // all 1
-        vpcmpeqd(ymm_mask, ymm_tmp, ymm_tmp);
-        auto in_mask = -1 << tail;
+        vpcmpeqd(ymm_mask, ymm_mask, ymm_mask);
         // blend in
+        auto in_mask = -1 << tail;
         vpblendd(ymm_mask, ymm_mask, ymm_tmp, in_mask);
     }
 
@@ -1194,24 +1193,11 @@ struct jit_single_blk_kernel : public jit_generator {
             ker_(in, out, scale);
     }
 
-    void operator()(
-            const void *in, void *out, const float *scale) const {
-        ker_(in, out, scale);
-    }
-
-    // Mask is fixed inside code
-    void set_mask() { set_mask_(); }
     void clean_avx() { vzeroupper_(); }
-    bool has_tail() { return this->ker_tail_ != nullptr; }
-
 private:
     const prb_t &prb_;
     void (*ker_)(const void *, void *, const float *);
     void (*ker_tail_)(const void *, void *, const float *);
-    void (*set_mask_)();
-
-    // multiple kernels,
-    // better left this job done last instead of in the middle.
     void (*vzeroupper_)();
 
     int itype_sz;
@@ -1608,18 +1594,6 @@ private:
 struct jit_blk_reorder_t : public primitive_t {
     struct pd_t : public cpu_reorder_pd_t {
         using cpu_reorder_pd_t::cpu_reorder_pd_t;
-        //
-        // Swap last two nodes, put block 4, 8, 16 nodes to first
-        //
-        static void prb_tile_normalize(tr::prb_t &p) {
-            if (!utils::one_of(p.nodes[0].n, /*4, */ 8ul, 16ul)
-                    && utils::one_of(p.nodes[1].n, /*4,*/ 8ul, 16ul)) {
-                nstl::swap(p.nodes[0], p.nodes[1]);
-            }
-            // for the case nodes[0] = 16 nodes[1] = 8
-            // 16x16 on 16x8 have same complexity as 8x8 on 16x8
-        }
-
         DECLARE_COMMON_PD_T("jit:blk", jit_blk_reorder_t);
 
         static status_t create(reorder_pd_t **reorder_pd, engine_t *engine,
@@ -1671,23 +1645,33 @@ struct jit_blk_reorder_t : public primitive_t {
         }
 
         tr::prb_t prb_;
+    private:
+        //
+        // Swap last two nodes, put block 4, 8, 16 nodes to first
+        //
+        static void prb_tile_normalize(tr::prb_t &p) {
+            if (!utils::one_of(p.nodes[0].n, 8ul, 16ul)
+                    && utils::one_of(p.nodes[1].n, 8ul, 16ul)) {
+                nstl::swap(p.nodes[0], p.nodes[1]);
+            }
+        }
     };
 
     jit_blk_reorder_t(const pd_t *apd) : primitive_t(apd) {
         kernel_ = utils::make_unique<tr::jit_single_blk_kernel>(pd()->prb_);
     }
 
-    int n(int d) const {
+    size_t n(int d) const {
         assert(d < pd()->prb_.ndims);
         return (int)pd()->prb_.nodes[d].n;
     }
-    int is(int d) const {
+    ptrdiff_t is(int d) const {
         assert(d < pd()->prb_.ndims);
-        return (int)pd()->prb_.nodes[d].is;
+        return pd()->prb_.nodes[d].is;
     }
-    int os(int d) const {
+    ptrdiff_t os(int d) const {
         assert(d < pd()->prb_.ndims);
-        return (int)pd()->prb_.nodes[d].os;
+        return pd()->prb_.nodes[d].os;
     }
 
     status_t execute(const exec_ctx_t &ctx) const override {
@@ -1709,36 +1693,19 @@ struct jit_blk_reorder_t : public primitive_t {
         auto itype_sz = data_type_size(pd()->prb_.itype);
         auto otype_sz = data_type_size(pd()->prb_.otype);
 
-        if (kernel_->has_tail()) {
-            const size_t work_amount = (size_t)BH * FL;
-            int nthr = adjust_num_threads(dnnl_get_max_threads(), work_amount);
-            if (nthr)
-                parallel(nthr, [&](int ithr, int nthr) {
-                    kernel_->set_mask();
-                    for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
-                        auto fl_b = fl * block_sz;
-                        auto bh_b = bh_stride * bh;
-                        auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
-                        auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
-                        (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
-                    });
-                    kernel_->clean_avx();
+        const size_t work_amount = (size_t)BH * FL;
+        int nthr = adjust_num_threads(dnnl_get_max_threads(), work_amount);
+        if (nthr)
+            parallel(nthr, [&](int ithr, int nthr) {
+                for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
+                    auto fl_b = fl * block_sz;
+                    auto bh_b = bh_stride * bh;
+                    auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
+                    auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
+                    (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
                 });
-        } else {
-            const size_t work_amount = (size_t)BH * FL;
-            int nthr = adjust_num_threads(dnnl_get_max_threads(), work_amount);
-            if (nthr)
-                parallel(nthr, [&](int ithr, int nthr) {
-                    for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
-                        auto fl_b = fl * block_sz;
-                        auto bh_b = bh_stride * bh;
-                        auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
-                        auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
-                        (*kernel_)(i, o, nullptr);
-                    });
-                    kernel_->clean_avx();
-                });
-        }
+                kernel_->clean_avx();
+            });
 
         return status::success;
     }
