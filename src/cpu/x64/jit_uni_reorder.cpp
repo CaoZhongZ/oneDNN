@@ -912,10 +912,8 @@ struct jit_single_blk_kernel : public jit_generator {
 
         bool ok = true && p.ndims >= 2 && mayiuse(avx2)
                 && p.scale_type == scale_type_t::NONE
-                && utils::one_of(p.itype, f32)
-                && utils::one_of(p.otype, f32)
-                && utils::everyone_is(0, p.ioff, p.ooff)
-                && p.beta == 0.f;
+                && utils::one_of(p.itype, f32) && utils::one_of(p.otype, f32)
+                && utils::everyone_is(0, p.ioff, p.ooff) && p.beta == 0.f;
         if (!ok) return false;
 
         int64_t n0 = p.nodes[0].n;
@@ -934,9 +932,7 @@ struct jit_single_blk_kernel : public jit_generator {
          *     8    m    1
          *     m    1    8
          */
-        ok = true
-                && (utils::one_of(n0, 8, 16)
-                        || utils::one_of(n1, 8, 16))
+        ok = true && (utils::one_of(n0, 8, 16) || utils::one_of(n1, 8, 16))
                 && ((i0 == 1 && o1 == 1 && n0 == i1 && o0 == n1)
                         || (o0 == 1 && i1 == 1 && n0 == o1 && i0 == n1));
         if (!ok) return false;
@@ -956,7 +952,6 @@ struct jit_single_blk_kernel : public jit_generator {
         : jit_generator()
         , prb_(prb)
         , ker_(nullptr)
-        , ker_tail_(nullptr)
         , itype_sz(data_type_size(prb_.itype))
         , otype_sz(data_type_size(prb_.otype))
         , block_sz(prb.nodes[0].n) {
@@ -966,6 +961,12 @@ struct jit_single_blk_kernel : public jit_generator {
                 = prb_.nodes[0].os != 1 ? prb_.nodes[0].os : prb_.nodes[1].os;
 
         auto ker_off = getSize();
+        Label tail_processing;
+        // if (tail) goto tail_processing
+
+        cmp(reg_ptr_tail, true);
+        je(tail_processing, T_NEAR);
+
         if (block_sz == 8) {
             gen_ker8x8(0, 0, input_stride, output_stride, 8, 8);
             block_sz = 8;
@@ -977,42 +978,33 @@ struct jit_single_blk_kernel : public jit_generator {
         }
         ret();
 
-        auto ker_tail_off = getSize();
-        auto i_tail = input_stride % 8;
-        auto o_tail = output_stride % 8;
-
-        if (i_tail != 0)
-            gen_setmask(i_tail);
-        else
-            gen_setmask(o_tail);
+        L(tail_processing);
 
         if (block_sz == 8) {
             auto i_tail = input_stride % 8 != 0 ? input_stride % 8 : 8;
             auto o_tail = output_stride % 8 != 0 ? output_stride % 8 : 8;
             if (i_tail != o_tail) {
+                auto t_mask = i_tail == 8 ? o_tail : i_tail;
+                gen_setmask(t_mask);
                 gen_ker8x8(0, 0, input_stride, output_stride, i_tail, o_tail);
             }
         } else if (block_sz == 16) {
             auto i_tail = input_stride % 16 != 0 ? input_stride % 16 : 16;
             auto o_tail = output_stride % 16 != 0 ? output_stride % 16 : 16;
             if (i_tail != o_tail) {
-                // Cases either i_tail != 16 or o_tail != 16
+                auto t_mask = i_tail == 16 ? o_tail : i_tail;
+                t_mask %= 8;
+                if (t_mask != 0) gen_setmask(t_mask);
                 gen_ker16x16_in_8x8(
                         input_stride, output_stride, i_tail, o_tail);
-            } // else we don't need handle tail situation
+            }
         } else {
             assert(!"unimplemented");
         }
         ret();
 
-        auto vzeroupper_off = getSize();
-        vzeroupper();
-        ret();
-
-        auto ker_start = getCode();
-        this->ker_ = (void (*)(const void *, void *, const float *))(ker_start + ker_off);
-        this->ker_tail_ = (void (*)(const void *, void *, const float *))(ker_start + ker_tail_off);
-        this->vzeroupper_ =  (void (*)())(ker_start + vzeroupper_off);
+        auto *ker_start = getCode();
+        this->ker_ = (decltype(ker_))(ker_start + ker_off);
     }
 
     void gen_loadu(const Ymm &ymm, const Address &addr, int size) {
@@ -1084,13 +1076,12 @@ struct jit_single_blk_kernel : public jit_generator {
     // keep order nchw -> nChw()C
     // or nChw()C -> nchw
     //
-    void gen_setmask(int tail) {
-        if (tail == 8) return;
+    void gen_setmask(int mask) {
         // all 0, all 1
         vxorps(ymm_tmp, ymm_tmp, ymm_tmp);
         vpcmpeqd(ymm_mask, ymm_mask, ymm_mask);
         // blend in
-        auto in_mask = -1 << tail;
+        auto in_mask = -1 << mask;
         vpblendd(ymm_mask, ymm_mask, ymm_tmp, in_mask);
     }
 
@@ -1144,12 +1135,12 @@ struct jit_single_blk_kernel : public jit_generator {
     void gen_ker16x16_in_8x8(int input_stride, int output_stride) {
         const auto lane = 16;
         const auto sub_lane = lane / 2;
-        gen_ker8x8(0, 0, input_stride, output_stride, sub_lane, sub_lane);
-        gen_ker8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
+        gen_tr8x8(0, 0, input_stride, output_stride, sub_lane, sub_lane);
+        gen_tr8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
                 input_stride, output_stride, sub_lane, sub_lane);
-        gen_ker8x8(sub_lane * itype_sz, output_stride * sub_lane * otype_sz,
+        gen_tr8x8(sub_lane * itype_sz, output_stride * sub_lane * otype_sz,
                 input_stride, output_stride, sub_lane, sub_lane);
-        gen_ker8x8((input_stride * sub_lane + sub_lane) * itype_sz,
+        gen_tr8x8((input_stride * sub_lane + sub_lane) * itype_sz,
                 (output_stride * sub_lane + sub_lane) * otype_sz, input_stride,
                 output_stride, sub_lane, sub_lane);
     }
@@ -1165,40 +1156,33 @@ struct jit_single_blk_kernel : public jit_generator {
         const auto u_tail = tail < sub_lane ? 0 : tail - sub_lane;
 
         if (tail == in_tail) {
-            gen_ker8x8(0, 0, input_stride, output_stride, l_tail, sub_lane);
-            gen_ker8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
+            gen_tr8x8(0, 0, input_stride, output_stride, l_tail, sub_lane);
+            gen_tr8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
                     input_stride, output_stride, l_tail, sub_lane);
-            gen_ker8x8(sub_lane * itype_sz, output_stride * sub_lane * otype_sz,
+            gen_tr8x8(sub_lane * itype_sz, output_stride * sub_lane * otype_sz,
                     input_stride, output_stride, u_tail, sub_lane);
-            gen_ker8x8(itype_sz * (input_stride * sub_lane + sub_lane),
+            gen_tr8x8(itype_sz * (input_stride * sub_lane + sub_lane),
                     otype_sz * (output_stride * sub_lane + sub_lane),
                     input_stride, output_stride, u_tail, sub_lane);
         } else {
-            gen_ker8x8(0, 0, input_stride, output_stride, sub_lane, l_tail);
-            gen_ker8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
+            gen_tr8x8(0, 0, input_stride, output_stride, sub_lane, l_tail);
+            gen_tr8x8(input_stride * sub_lane * itype_sz, sub_lane * otype_sz,
                     input_stride, output_stride, sub_lane, u_tail);
-            gen_ker8x8(sub_lane * itype_sz, output_stride * sub_lane * itype_sz,
+            gen_tr8x8(sub_lane * itype_sz, output_stride * sub_lane * itype_sz,
                     input_stride, output_stride, sub_lane, l_tail);
-            gen_ker8x8(itype_sz * (input_stride * sub_lane + sub_lane),
+            gen_tr8x8(itype_sz * (input_stride * sub_lane + sub_lane),
                     otype_sz * (output_stride * sub_lane + sub_lane),
                     input_stride, output_stride, sub_lane, u_tail);
         }
     }
 
-    void operator()(
-            const void *in, void *out, const float *scale, bool tail) const {
-        if (tail)
-            ker_tail_(in, out, scale);
-        else
-            ker_(in, out, scale);
+    void operator()(const void *in, void *out, bool tail) const {
+        ker_(in, out, tail);
     }
 
-    void clean_avx() { vzeroupper_(); }
 private:
     const prb_t &prb_;
-    void (*ker_)(const void *, void *, const float *);
-    void (*ker_tail_)(const void *, void *, const float *);
-    void (*vzeroupper_)();
+    void (*ker_)(const void *, void *, bool tail);
 
     int itype_sz;
     int otype_sz;
@@ -1206,7 +1190,7 @@ private:
 
     Reg64 reg_ptr_in = abi_param1;
     Reg64 reg_ptr_out = abi_param2;
-    Reg64 reg_ptr_scale = abi_param3;
+    Reg64 reg_ptr_tail = abi_param3;
 
     Ymm ymm_mask = ymm15;
     Ymm ymm_tmp = ymm14;
@@ -1591,6 +1575,60 @@ private:
     tr::kernel_t *kernel_;
 };
 
+// TODO: Where to put it?
+// It will protect xmm6 ~ xmm15 'outside' of the scope on Win x64 ABI,
+// not inside (you have to chance it)
+// Degenerate to vzeroupper on system V ABI
+struct sse_guard {
+#if defined(_WIN32)
+    constexpr static size_t xmm_nvolatile = 10;
+#else
+    constexpr static size_t xmm_nvolatile = 0;
+#endif
+    constexpr static size_t xmm_length = 16;
+    constexpr static size_t xmm_start = 6;
+    constexpr static size_t stack_size = xmm_length * xmm_nvolatile;
+    sse_guard(void *stack) : stack_(stack) {
+        static save_t j;
+        j.ker_(stack);
+    }
+
+    ~sse_guard() {
+        static restore_t j;
+        j.ker_(stack_);
+    }
+
+private:
+    void *stack_;
+    struct save_t : public jit_generator {
+        typedef void (*stub_sig)(void *stack);
+        save_t() {
+            for (int i = 0; i < xmm_nvolatile; ++i) {
+                movdqu(ptr[abi_param1 + i * xmm_length], Xmm(i + xmm_start));
+            }
+            ret();
+            ker_ = (stub_sig)getCode();
+        }
+        DECLARE_CPU_JIT_AUX_FUNCTIONS(save_t);
+        stub_sig ker_;
+    };
+
+    struct restore_t : public jit_generator {
+        typedef void (*stub_sig)(void *stack);
+        restore_t() {
+            for (int i = 0; i < xmm_nvolatile; ++i) {
+                movdqu(Xmm(i + xmm_start), ptr[abi_param1 + i * xmm_length]);
+            }
+            uni_vzeroupper();
+            ret();
+
+            ker_ = (stub_sig)getCode();
+        }
+        DECLARE_CPU_JIT_AUX_FUNCTIONS(restore_t);
+        stub_sig ker_;
+    };
+};
+
 struct jit_blk_reorder_t : public primitive_t {
     struct pd_t : public cpu_reorder_pd_t {
         using cpu_reorder_pd_t::cpu_reorder_pd_t;
@@ -1645,6 +1683,7 @@ struct jit_blk_reorder_t : public primitive_t {
         }
 
         tr::prb_t prb_;
+
     private:
         //
         // Swap last two nodes, put block 4, 8, 16 nodes to first
@@ -1678,8 +1717,7 @@ struct jit_blk_reorder_t : public primitive_t {
         auto in = CTX_IN_MEM(const char *, DNNL_ARG_FROM);
         auto out = CTX_OUT_MEM(char *, DNNL_ARG_TO);
 
-        // kernel handle 2-dimension tiles
-        // Which means there is a tail
+        // kernel handle 2-dimension tiles, a tail is possible
         auto &prb = this->pd()->prb_;
         ptrdiff_t BH = 1;
         for (int i = 2; i < prb.ndims; ++i) {
@@ -1687,25 +1725,31 @@ struct jit_blk_reorder_t : public primitive_t {
         }
 
         auto block_sz = n(0);
-        auto FL = (n(1) + block_sz - 1) / block_sz;
-        auto bh_stride = BH == 1 ? 0 /* don't care, and no is(2) */ : is(2);
+        auto n1 = n(1);
+        auto i1 = is(1);
+        auto o1 = os(1);
+        auto FL = (n1 + block_sz - 1) / block_sz;
+        auto bh_stride = BH == 1 ? 0 : is(2);
 
         auto itype_sz = data_type_size(pd()->prb_.itype);
         auto otype_sz = data_type_size(pd()->prb_.otype);
 
         const size_t work_amount = (size_t)BH * FL;
         int nthr = adjust_num_threads(dnnl_get_max_threads(), work_amount);
-        if (nthr)
-            parallel(nthr, [&](int ithr, int nthr) {
-                for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
-                    auto fl_b = fl * block_sz;
-                    auto bh_b = bh_stride * bh;
-                    auto *i = in + (bh_b + fl_b * is(1)) * itype_sz;
-                    auto *o = out + (bh_b + fl_b * os(1)) * otype_sz;
-                    (*kernel_)(i, o, nullptr, n(1) - fl_b < block_sz);
+        parallel(nthr,
+                [BH, FL, block_sz, bh_stride, itype_sz, otype_sz, in, out, i1,
+                        o1, n1, this](int ithr, int nthr) {
+                    sse_guard(alloca(sse_guard::stack_size));
+                    // Hail Marry on Win x64:
+                    // No xmm6 ~ xmm15 usage cross JIT function
+                    for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
+                        auto fl_b = fl * block_sz;
+                        auto bh_b = bh_stride * bh;
+                        auto *i = in + (bh_b + fl_b * i1) * itype_sz;
+                        auto *o = out + (bh_b + fl_b * o1) * otype_sz;
+                        (*kernel_)(i, o, n1 - fl_b < block_sz);
+                    });
                 });
-                kernel_->clean_avx();
-            });
 
         return status::success;
     }
