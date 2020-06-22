@@ -1739,7 +1739,7 @@ struct jit_blk_reorder_t : public primitive_t {
         parallel(nthr,
                 [BH, FL, block_sz, bh_stride, itype_sz, otype_sz, in, out, i1,
                         o1, n1, this](int ithr, int nthr) {
-                    sse_guard(alloca(sse_guard::stack_size));
+                    sse_guard g(alloca(sse_guard::stack_size));
                     // Hail Marry on Win x64:
                     // No xmm6 ~ xmm15 usage cross JIT function
                     for_nd(ithr, nthr, BH, FL, [&](dim_t bh, dim_t fl) {
