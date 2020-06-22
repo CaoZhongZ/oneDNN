@@ -1603,7 +1603,7 @@ private:
     struct save_t : public jit_generator {
         typedef void (*stub_sig)(void *stack);
         save_t() {
-            for (int i = 0; i < xmm_nvolatile; ++i) {
+            for (unsigned i = 0; i < xmm_nvolatile; ++i) {
                 movdqu(ptr[abi_param1 + i * xmm_length], Xmm(i + xmm_start));
             }
             ret();
@@ -1616,7 +1616,7 @@ private:
     struct restore_t : public jit_generator {
         typedef void (*stub_sig)(void *stack);
         restore_t() {
-            for (int i = 0; i < xmm_nvolatile; ++i) {
+            for (unsigned i = 0; i < xmm_nvolatile; ++i) {
                 movdqu(Xmm(i + xmm_start), ptr[abi_param1 + i * xmm_length]);
             }
             uni_vzeroupper();
