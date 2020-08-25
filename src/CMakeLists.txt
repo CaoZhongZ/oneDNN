@@ -174,18 +174,22 @@ else()
     endif()
     foreach(ver "" ${vers})
         set_ternary(ext_and_ver APPLE "${ver}${ext}" "${ext}${ver}")
-        get_property(lib_location TARGET ${LIB_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY)
-        if(lib_location)
-            set(compat_link "${lib_location}/libmkldnn${ext_and_ver}")
-        else()
-            set(compat_link "${CMAKE_CURRENT_BINARY_DIR}/libmkldnn${ext_and_ver}")
-        endif()
+        set(compat_link libmkldnn${ext_and_ver})
+        #
+        # src/libmkldnn.dylib :
+        #   ln -s src/libdnnl.dylib src/libmkldnn.dylib
+        #
+        # compat_link_phony : src/libmkldnn.dylib
+        #
+        # src/libdnnl.dylib : compat_link_phony
+        #
         add_custom_command(OUTPUT ${compat_link}
-            # to make the next command work fine
-            COMMAND ${CMAKE_COMMAND} -E remove -f ${compat_link}
-            COMMAND ${CMAKE_COMMAND} -E create_symlink libdnnl${ext_and_ver} ${compat_link}
-            DEPENDS ${LIB_NAME})
-        add_custom_target(compat_libs${ver} ALL DEPENDS ${compat_link})
+          COMMAND ${CMAKE_COMMAND} -E create_symlink libdnnl${ext_and_ver} ${compat_link})
+
+        add_custom_target(${compat_link}_phony DEPENDS ${compat_link})
+
+        add_dependencies(${LIB_NAME} ${compat_link}_phony)
+
         install(FILES ${compat_link} DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
     endforeach()
 endif()
