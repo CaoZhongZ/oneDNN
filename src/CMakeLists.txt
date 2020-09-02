@@ -102,6 +102,11 @@ target_include_directories(${LIB_NAME} PUBLIC
 
 target_link_libraries_build(${LIB_NAME}
     "${EXTRA_SHARED_LIBS};${EXTRA_STATIC_LIBS}")
+
+if(ISPC)
+    target_link_libraries(${LIB_NAME} PRIVATE ISPC_LIB)
+endif()
+
 target_link_libraries_install(${LIB_NAME} "${EXTRA_SHARED_LIBS}")
 if(DNNL_LIBRARY_TYPE STREQUAL "STATIC")
     target_link_libraries_install(${LIB_NAME} "${EXTRA_STATIC_LIBS}")

@@ -251,7 +251,7 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
 
             if (jcp.im2col_sz && do_im2col) {
                 if (!is_problem_3d)
-                    jit_gemm_convolution_utils::im2col<float>(jcp, _src, _col,
+                    jit_gemm_convolution_utils::im2col(jcp, _src, _col,
                             curr.sp, step.sp, curr.ic, step.ic);
                 else
                     jit_gemm_convolution_utils::im2col_3d<float>(
@@ -799,7 +799,7 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_ncsp(
 
                         if (jcp.im2col_sz) {
                             if (!is_problem_3d)
-                                jit_gemm_convolution_utils::im2col<float>(jcp,
+                                jit_gemm_convolution_utils::im2col(jcp,
                                         _src, _col, os_nb * jcp.os_block,
                                         os_block, 0, jcp.ic);
                             else

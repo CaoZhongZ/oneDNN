@@ -229,3 +229,8 @@ if(APPLE)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_rpath}")
     endforeach()
 endif()
+
+find_program(ISPC NAMES ispc)
+if(ISPC)
+    add_definitions(-DISPC_ENABLED)
+endif()

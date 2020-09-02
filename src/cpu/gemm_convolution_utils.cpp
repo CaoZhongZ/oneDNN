@@ -30,6 +30,10 @@
 #include "cpu/x64/cpu_isa_traits.hpp"
 #endif
 
+#ifdef ISPC_ENABLED
+#include "cpu/x64/copy_1d_simd.h"
+#endif
+
 namespace dnnl {
 namespace impl {
 namespace cpu {
@@ -555,9 +559,191 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
     }
 }
 
+#ifdef ISPC_ENABLED
+// Spatialize float
+/* col[ic][kh][kw][sb] <-- im2col(im[ic][sb]) */
+template <>
+void im2col<float>(const conv_gemm_conf_t &jcp, const float *__restrict im,
+        float *__restrict col, int ss, int sb, int cs, int cb) {
+    const float *__restrict _im = reinterpret_cast<const float *__restrict>(im);
+    float *__restrict _col = reinterpret_cast<float *__restrict>(col);
+
+    const size_t im_step = jcp.is;
+    const size_t col_step = jcp.ks * sb;
+    const int dh = 1 + jcp.dilate_h;
+    const int dw = 1 + jcp.dilate_w;
+    const int sh = jcp.stride_h;
+    const int sw = jcp.stride_w;
+    const int tp = jcp.t_pad;
+    const int lp = jcp.l_pad;
+    const int first_oh = ss / jcp.ow;
+    const int last_oh = (ss + sb - 1) / jcp.ow;
+    const int oh_begin = first_oh;
+    const int oh_end = last_oh + 1;
+    const int first_ow = ss % jcp.ow;
+    const int last_ow = (ss + sb - 1) % jcp.ow;
+
+    const float zero_val = 0;
+
+    if (jcp.outer_threading) {
+        if (sw == 1) {
+            // Generated code is more optimized for stride_w == 1
+            // because innermost loop is by width
+            if (cb % 8 == 0) {
+                for (int ic = 0; ic < cb; ic += 8) {
+                    const float *__restrict im_ic = _im + (ic + cs) * im_step;
+                    for (int kh = 0; kh < jcp.kh; kh++) {
+                        for (int kw = 0; kw < jcp.kw; kw++) {
+                            float *__restrict col_k = _col + ic * col_step
+                                    + (kh * jcp.kw + kw) * sb;
+                            for (int oh = oh_begin; oh < oh_end; oh++) {
+                                const int ih = oh * sh - tp + kh * dh;
+                                const float *__restrict im_
+                                        = im_ic + ih * jcp.iw;
+                                const int ow_begin
+                                        = (oh == first_oh) ? first_ow : 0;
+                                const int ow_end = (oh == last_oh)
+                                        ? (last_ow + 1)
+                                        : jcp.ow;
+                                float *__restrict col_
+                                        = col_k + oh * jcp.ow - ss;
+                                if (ih < 0 || ih >= jcp.ih)
+                                    zero_1d_simd_c_unroll_8(col_ + ow_begin,
+                                            col_step, ow_end - ow_begin);
+                                else {
+                                    auto start_off = ow_begin - lp + kw * dw;
+                                    auto len = ow_end - ow_begin;
+                                    copy_1d_simd_c_unroll_8(col_ + ow_begin,
+                                            col_step, im_, im_step, start_off,
+                                            jcp.iw, len);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                for (int ic = 0; ic < cb; ic++) {
+                    const float *__restrict im_ic = _im + (ic + cs) * im_step;
+                    for (int kh = 0; kh < jcp.kh; kh++) {
+                        for (int kw = 0; kw < jcp.kw; kw++) {
+                            float *__restrict col_k = _col + ic * col_step
+                                    + (kh * jcp.kw + kw) * sb;
+                            for (int oh = oh_begin; oh < oh_end; oh++) {
+                                const int ih = oh * sh - tp + kh * dh;
+                                const float *__restrict im_
+                                        = im_ic + ih * jcp.iw;
+                                const int ow_begin
+                                        = (oh == first_oh) ? first_ow : 0;
+                                const int ow_end = (oh == last_oh)
+                                        ? (last_ow + 1)
+                                        : jcp.ow;
+                                float *__restrict col_
+                                        = col_k + oh * jcp.ow - ss;
+                                if (ih < 0 || ih >= jcp.ih)
+                                    zero_1d_simd(
+                                            col_ + ow_begin, ow_end - ow_begin);
+                                else {
+                                    auto start_off = ow_begin - lp + kw * dw;
+                                    auto len = ow_end - ow_begin;
+                                    copy_1d_simd(col_ + ow_begin, im_,
+                                            start_off, jcp.iw, len);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for (int ic = 0; ic < cb; ic++) {
+                const float *__restrict im_ = _im + (ic + cs) * im_step;
+                for (int kh = 0; kh < jcp.kh; kh++) {
+                    for (int kw = 0; kw < jcp.kw; kw++) {
+                        float *__restrict col_k = _col + ic * col_step
+                                + (kh * jcp.kw + kw) * sb;
+                        for (int oh = oh_begin; oh < oh_end; oh++) {
+                            const int ih = oh * sh - tp + kh * dh;
+                            const int ow_begin
+                                    = (oh == first_oh) ? first_ow : 0;
+                            const int ow_end
+                                    = (oh == last_oh) ? (last_ow + 1) : jcp.ow;
+                            float *__restrict col_oh = col_k + oh * jcp.ow - ss;
+                            if (ih < 0 || ih >= jcp.ih)
+                                for (int ow = ow_begin; ow < ow_end; ow++)
+                                    col_oh[ow] = zero_val;
+                            else
+                                for (int ow = ow_begin; ow < ow_end; ow++) {
+                                    const int iw = ow * sw - lp + kw * dw;
+                                    if (iw < 0 || iw >= jcp.iw)
+                                        col_oh[ow] = zero_val;
+                                    else {
+                                        const ptrdiff_t im_idx
+                                                = ih * jcp.iw + iw;
+                                        col_oh[ow] = im_[im_idx];
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // TODO: optimize threading if jcp.ic*jcp.kh*jcp.kw*oh_range is small
+        // comparing to number of threads
+        const int oh_range = oh_end - oh_begin;
+        // Generated code is more optimized for stride_w == 1
+        // because innermost loop is by width
+        if (sw == 1)
+            parallel_nd(cb, jcp.kh, jcp.kw, oh_range,
+                    [&](int ic, int kh, int kw, int ohr) {
+                        const int oh = ohr + oh_begin;
+                        const int ih = oh * sh - tp + kh * dh;
+                        const int ow_start = (oh == first_oh) ? first_ow : 0;
+                        const int ow_end
+                                = (oh == last_oh) ? (last_ow + 1) : jcp.ow;
+                        float *__restrict col_oh = _col + ic * col_step
+                                + (kh * jcp.kw + kw) * sb + oh * jcp.ow - ss;
+                        const float *__restrict im_
+                                = _im + (ic + cs) * im_step + ih * jcp.iw;
+                        const int iw_shift = kw * dw - lp;
+                        if (ih < 0 || ih >= jcp.ih)
+                            zero_1d_simd(col_oh + ow_start, ow_end - ow_start);
+                        else {
+                            const int start_off = ow_start + iw_shift;
+                            copy_1d_simd(col_oh + ow_start, im_, start_off,
+                                    jcp.iw, ow_end - ow_start);
+                        }
+                    });
+        else
+            parallel_nd(cb, jcp.kh, jcp.kw, oh_range,
+                    [&](int ic, int kh, int kw, int ohr) {
+                        const int oh = ohr + oh_begin;
+                        const int ih = oh * sh - tp + kh * dh;
+                        const int ow_start = (oh == first_oh) ? first_ow : 0;
+                        const int ow_end
+                                = (oh == last_oh) ? (last_ow + 1) : jcp.ow;
+                        float *__restrict col_oh = _col + ic * col_step
+                                + (kh * jcp.kw + kw) * sb + oh * jcp.ow - ss;
+                        const float *__restrict im_ = _im + (ic + cs) * im_step;
+                        if (ih < 0 || ih >= jcp.ih)
+                            zero_1d_simd(col_oh + ow_start, ow_end - ow_start);
+                        else
+                            for (int ow = ow_start; ow < ow_end; ow++) {
+                                const int iw = ow * sw - lp + kw * dw;
+                                if (iw < 0 || iw >= jcp.iw)
+                                    col_oh[ow] = zero_val;
+                                else {
+                                    const ptrdiff_t im_idx = ih * jcp.iw + iw;
+                                    col_oh[ow] = im_[im_idx];
+                                }
+                            }
+                    });
+    }
+}
+#else
+// Instantiate the general
 template void im2col(const conv_gemm_conf_t &jcp, const float *__restrict im,
         float *__restrict col, int hs, int hb, int ws, int wb);
-
+#endif
 template void im2col(const conv_gemm_conf_t &jcp,
         const bfloat16_t *__restrict im, bfloat16_t *__restrict col, int hs,
         int hb, int ws, int wb);
