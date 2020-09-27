@@ -77,7 +77,7 @@ if(ISPC)
       COMMAND ${ISPC} --cpu=broadwell --target=avx2-i32x8 ${ISPC_KERNELS} -o ${ISPC_OBJ}
       DEPENDS ${ISPC_KERNELS})
     add_custom_target(ISPC_TARGET DEPENDS ${ISPC_OBJ})
-    add_library(ISPC_LIB INTERFACE)
+    add_library(ISPC_LIB INTERFACE IMPORTED GLOBAL)
     add_dependencies(ISPC_LIB ISPC_TARGET)
     target_link_libraries(ISPC_LIB INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/${ISPC_OBJ})
 endif()
