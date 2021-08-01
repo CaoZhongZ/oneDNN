@@ -40,9 +40,9 @@ saturate(const acc_t &x) {
 template <typename data_t, typename acc_t>
 inline typename utils::enable_if<nstl::is_integral<data_t>::value,
         typename utils::remove_reference<acc_t>::type>::type
-saturate(const acc_t &x) {
+saturate(const acc_t &x, bool elevated_min = false) {
     acc_t v = x;
-    acc_t lbound = (acc_t)nstl::numeric_limits<data_t>::lowest();
+    acc_t lbound = (acc_t)nstl::numeric_limits<data_t>::lowest() + int(elevated_min);
     // Pick up a modified version of max value when do f32 -> s32.
     acc_t ubound = types::max_value<acc_t>(data_traits<data_t>::data_type);
     if (v < lbound) v = lbound;
@@ -51,12 +51,12 @@ saturate(const acc_t &x) {
 }
 
 template <>
-inline uint8_t saturate<int8_t, uint8_t>(const uint8_t &x) {
+inline uint8_t saturate<int8_t, uint8_t>(const uint8_t &x, bool) {
     return x <= 127u ? x : 127;
 }
 
 template <>
-inline int8_t saturate<uint8_t, int8_t>(const int8_t &x) {
+inline int8_t saturate<uint8_t, int8_t>(const int8_t &x, bool) {
     return x >= 0 ? x : 0;
 }
 

@@ -1493,7 +1493,7 @@ public:
      */
     template <typename Vmm>
     void init_saturate_f32(Vmm vmm_lbound, Vmm vmm_ubound, Xbyak::Reg64 reg_tmp,
-            data_type_t idt, data_type_t odt) {
+            data_type_t idt, data_type_t odt, bool elevated_min = false) {
         using namespace data_type;
         if (!((idt == f32) && utils::one_of(odt, u8, s8, s32))) return;
 
@@ -1512,6 +1512,19 @@ public:
             uni_vbroadcastss(vmm_ubound, tmp);
         else
             uni_vshufps(vmm_ubound, tmp, tmp, 0);
+
+        // Specific for elevated s8 min
+        if (odt == s8 && elevated_min) {
+          Xbyak::Xmm tmp(vmm_lbound.getIdx());
+          float saturation_lbound =
+            nstl::numeric_limits<prec_traits<s8>::type>::min() + 1;
+          mov(reg_tmp, float2int(saturation_lbound));
+          uni_vmovq(tmp, reg_tmp);
+          if (vmm_lbound.isYMM() || vmm_lbound.isZMM())
+              uni_vbroadcastss(vmm_lbound, tmp);
+          else
+              uni_vshufps(vmm_lbound, tmp, tmp, 0);
+        }
     }
 
     template <typename Vmm>
@@ -1525,9 +1538,9 @@ public:
         if (!utils::one_of(odt, u8, s8, s32)) return;
 
         // no need to apply lower saturation bound when odt is
-        // signed, as cvtps2dq will return MIN_INT if the value
+        // 32-bit signed, as cvtps2dq will return MIN_INT if the value
         // does not fit
-        if (odt == u8) {
+        if (odt == u8 || odt == s8) {
             if (is_valid_isa(avx))
                 vmaxps(vmm, vmm, vmm_lbound);
             else

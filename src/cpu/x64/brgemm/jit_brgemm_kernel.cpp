@@ -819,7 +819,7 @@ void jit_brgemm_kernel_base_t::store_accumulators_apply_post_ops(
     auto zmm_ubound = zmm_tmp_2();
     if (dt_requires_saturation) {
         init_saturate_f32(
-                zmm_lbound, zmm_ubound, reg_tmp_gpr, data_type::f32, brg.dt_d);
+                zmm_lbound, zmm_ubound, reg_tmp_gpr, data_type::f32, brg.dt_d, true);
     }
 
     for (int bd = 0; bd < bd_block; bd++) {
@@ -865,7 +865,7 @@ void jit_brgemm_kernel_base_t::store_accumulators_without_post_ops(
     auto zmm_ubound = zmm_tmp_2();
     if (dt_requires_saturation) {
         init_saturate_f32(
-                zmm_lbound, zmm_ubound, reg_tmp_gpr, data_type::f32, brg.dt_d);
+                zmm_lbound, zmm_ubound, reg_tmp_gpr, data_type::f32, brg.dt_d, true);
     }
 
     for (int bd = 0; bd < bd_block; bd++) {

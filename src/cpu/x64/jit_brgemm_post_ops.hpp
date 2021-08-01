@@ -517,7 +517,7 @@ private:
         auto zmm_ubound = Xbyak::Zmm(30);
         if (dt_requires_saturation) {
             init_saturate_f32(zmm_lbound, zmm_ubound, reg_tmp_gpr,
-                    data_type::f32, brg.dt_d);
+                    data_type::f32, brg.dt_d, true);
         }
 
         for_(int m = 0; m < m_block; m++)

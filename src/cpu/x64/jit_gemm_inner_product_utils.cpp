@@ -1186,7 +1186,7 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::generate() {
     }
 
     init_saturate_f32(vreg_zero, vreg_saturation_ubound, reg_tmp_comp,
-            data_type::f32, dst_type);
+            data_type::f32, dst_type, true);
 
     // at least 2 blocks of mb within vlen
     bool dim_restrict = !this->runtime_oc() && !this->runtime_mb()
