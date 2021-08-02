@@ -274,7 +274,8 @@ jit_pp_kernel_t<isa, acc_type, dst_type>::jit_pp_kernel_t(size_t OC, size_t MB,
 
     if (this->do_scale_) vreg_scale = Vmm(idx_compute_vreg_start_++);
 
-    if (dst_type == data_type::u8) vreg_zero = Vmm(idx_compute_vreg_start_++);
+    if (dst_type == data_type::u8 || dst_type==data_type::s8)
+        vreg_zero = Vmm(idx_compute_vreg_start_++);
     if (utils::one_of(dst_type, data_type::u8, data_type::s8, data_type::s32))
         vreg_saturation_ubound = Vmm(idx_compute_vreg_start_++);
 
