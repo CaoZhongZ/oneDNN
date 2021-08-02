@@ -1493,7 +1493,7 @@ public:
      */
     template <typename Vmm>
     void init_saturate_f32(Vmm vmm_lbound, Vmm vmm_ubound, Xbyak::Reg64 reg_tmp,
-            data_type_t idt, data_type_t odt, bool elevated_min = false) {
+            data_type_t idt, data_type_t odt, bool elevated_min = true) {
         using namespace data_type;
         if (!((idt == f32) && utils::one_of(odt, u8, s8, s32))) return;
 
