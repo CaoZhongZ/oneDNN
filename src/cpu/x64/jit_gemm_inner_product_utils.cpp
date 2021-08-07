@@ -587,11 +587,18 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::cvt_and_store(
     auto v_src = tail ? v | kreg_rem_mask : v;
     const Xbyak::Address dst = get_address(arg_num, off);
     switch (dt) {
-        case s8:
+        case s8: {
+          auto v_xmm = Xmm(v.getIdx());
+          auto dst_k = tail ? dst | kreg_rem_mask : dst;
           if (this->do_precompensation) {
-            vpaddb(v_src, v_src, Vreg_compensation);
+            vpmovsdb(v_xmm, v);
+            vpxord(v_xmm, v_xmm, Xmm(Vreg_compensation.getIdx()));
+            vmovdqu8(dst_k, v_xmm);
+          } else {
+            vpmovsdb(dst, v_src);
           }
-          vpmovsdb(dst, v_src); break;
+        }
+        break;
         case u8: vpmovusdb(dst, v_src); break;
         case f32:
         case s32: uni_vmovups(dst, v_src); break;
@@ -1140,7 +1147,7 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::generate() {
     // HACK, do precompensation
     if (this->do_precompensation) {
         mov(reg_oc.cvt32(), 0x80808080);
-        uni_vpbroadcastd(Vreg_compensation, reg_oc.cvt32());
+        vpbroadcastd(Vreg_compensation, reg_oc.cvt32());
     }
     if (this->runtime_oc())
         mov(reg_oc, ptr[reg_param + PARAM_OFF(oc)]);
