@@ -37,7 +37,7 @@ option(DNNL_ENABLE_CONCURRENT_EXEC
     CAUTION: enabling this option increases memory consumption."
     OFF) # disabled by default
 
-option(DNNL_ENABLE_PRIMITIVE_CACHE "enables primitive cache." ON)
+  option(DNNL_ENABLE_PRIMITIVE_CACHE "enables primitive cache." OFF)
     # enabled by default
 
 option(DNNL_USE_RT_OBJECTS_IN_PRIMITIVE_CACHE "If DNNL_ENABLE_PRIMITIVE_CACHE
