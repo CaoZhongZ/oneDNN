@@ -162,6 +162,7 @@ private:
     // Will be assigned in constructor
     Vmm vreg_zero, vreg_saturation_ubound, vreg_scale, vreg_sum_scale,
             vreg_sum_zp, vreg_dst_zero_points;
+    Vmm Vreg_compensation;
 
     const Xbyak::Reg64 &eltwise_reserved_gpr_ = r11;
     const Xbyak::Opmask &eltwise_reserved_opmask_ = k2;
@@ -171,7 +172,6 @@ private:
     Xbyak::Zmm bf16_emu_reserv_3 = Xbyak::Zmm(30);
     Xbyak::Reg64 bf16_emu_reserv_4 = reg_tmp_comp;
     Xbyak::Zmm bf16_emu_reserv_5 = Xbyak::Zmm(31);
-    Xbyak::Zmm precompensation = bf16_emu_reserv_5;
 
     const int default_OC_loop_unroll_ = is_avx512_ ? 4 : 3;
     int max_OC_loop_unroll_ = 13;
@@ -275,8 +275,11 @@ jit_pp_kernel_t<isa, acc_type, dst_type>::jit_pp_kernel_t(size_t OC, size_t MB,
 
     if (this->do_scale_) vreg_scale = Vmm(idx_compute_vreg_start_++);
 
-    if (dst_type == data_type::u8 || dst_type==data_type::s8)
+    if (dst_type == data_type::u8 || dst_type==data_type::s8) {
         vreg_zero = Vmm(idx_compute_vreg_start_++);
+        if (this->do_precompensation)
+          Vreg_compensation = Vmm(idx_compute_vreg_start_ ++);
+    }
     if (utils::one_of(dst_type, data_type::u8, data_type::s8, data_type::s32))
         vreg_saturation_ubound = Vmm(idx_compute_vreg_start_++);
 
@@ -586,7 +589,7 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::cvt_and_store(
     switch (dt) {
         case s8:
           if (this->do_precompensation) {
-            vpaddb(v_src, v_src, this->precompensation);
+            vpaddb(v_src, v_src, Vreg_compensation);
           }
           vpmovsdb(dst, v_src); break;
         case u8: vpmovusdb(dst, v_src); break;
@@ -1137,7 +1140,7 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::generate() {
     // HACK, do precompensation
     if (this->do_precompensation) {
         mov(reg_oc.cvt32(), 0x80808080);
-        vbroadcastsd(this->precompensation, reg_oc.cvt32());
+        uni_vpbroadcastd(Vreg_compensation, reg_oc.cvt32());
     }
     if (this->runtime_oc())
         mov(reg_oc, ptr[reg_param + PARAM_OFF(oc)]);
