@@ -70,10 +70,12 @@ struct gemm_x8s8s32x_matmul_t : public primitive_t {
                     mb = m_per_thr;
                 }
             }
+            auto pcomp =
+                pd()->desc()->prop_kind == prop_kind_t::dnnl_forward_training;
 
             pp_kernel_.reset(pp_kernel_t::create(pd()->N(), mb, pd()->ldc(),
                     &pd()->params().pp_attr_, pd()->desc()->bias_desc.data_type,
-                    pd()->dst_md(), false));
+                    pd()->dst_md(), false, pcomp));
             return pp_kernel_->create_kernel();
         }
         return status::success;
