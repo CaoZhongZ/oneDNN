@@ -2178,6 +2178,8 @@ typedef struct {
     /// The kind of primitive. Used for self-identifying the primitive
     /// descriptor. Must be #dnnl_matmul.
     dnnl_primitive_kind_t primitive_kind;
+    // Hack for inner purpose
+    dnnl_prop_kind_t prop_kind;
     /// Source memory descriptor.
     dnnl_memory_desc_t src_desc;
     /// Weights memory descriptor.

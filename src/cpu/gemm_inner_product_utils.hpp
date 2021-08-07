@@ -33,11 +33,13 @@ template <data_type_t acc_type, data_type_t dst_type>
 struct pp_kernel_t {
     static pp_kernel_t *create(size_t OC, size_t MB, dim_t dst_mb_stride,
             const primitive_attr_t *attr, data_type_t bias_dt,
-            const memory_desc_t *dst_md, bool skip_sum);
+            const memory_desc_t *dst_md, bool skip_sum, bool bcomp = false);
+
     static pp_kernel_t *create(
             const cpu_inner_product_fwd_pd_t *pd, bool skip_sum) {
+        auto bcomp = pd->desc()->prop_kind == prop_kind::forward_training;
         return create(pd->OC(), pd->MB(), pd->OC(), pd->attr(),
-                pd->desc()->bias_desc.data_type, pd->dst_md(), skip_sum);
+                pd->desc()->bias_desc.data_type, pd->dst_md(), skip_sum, bcomp);
     }
 
     virtual ~pp_kernel_t() = default;
@@ -63,7 +65,7 @@ struct pp_kernel_t {
 protected:
     pp_kernel_t(size_t OC, size_t MB, dim_t dst_mb_stride,
             const primitive_attr_t *attr, data_type_t bias_dt,
-            const int dst_ndims, bool skip_sum);
+            const int dst_ndims, bool skip_sum, bool pcomp = false);
 
     size_t OC_;
     size_t MB_;
@@ -76,6 +78,7 @@ protected:
     bool do_binary_ = false;
     bool do_sum_ = false;
     bool do_dst_zero_points_ = false;
+    bool do_precompensation = false;
     float sum_scale_ = 0.f;
     int32_t sum_zp_ = 0;
     bool mb_blk_kernel_ = false;

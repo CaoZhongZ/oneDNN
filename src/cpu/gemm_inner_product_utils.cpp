@@ -138,12 +138,12 @@ void ref_pp_kernel_t<acc_type, dst_type>::operator()(dst_data_t *dst,
 template <data_type_t acc_type, data_type_t dst_type>
 pp_kernel_t<acc_type, dst_type>::pp_kernel_t(size_t OC, size_t MB,
         dim_t dst_mb_stride, const primitive_attr_t *attr, data_type_t bias_dt,
-        const int dst_ndims, bool skip_sum)
+        const int dst_ndims, bool skip_sum, bool pcomp)
     : OC_(OC)
     , MB_(MB)
     , dst_mb_stride_(dst_mb_stride)
     , bias_data_type_(bias_dt)
-    , ndims_(dst_ndims) {
+    , do_precompensation(pcomp && dst_type == data_type::s8), ndims_(dst_ndims) {
     do_scale_ = !attr->output_scales_.has_default_values();
     if (do_scale_)
         // PER_OC mask definition for matmul batched case
@@ -175,10 +175,11 @@ pp_kernel_t<acc_type, dst_type>::pp_kernel_t(size_t OC, size_t MB,
 template <data_type_t acc_type, data_type_t dst_type>
 pp_kernel_t<acc_type, dst_type> *pp_kernel_t<acc_type, dst_type>::create(
         size_t OC, size_t MB, dim_t dst_mb_stride, const primitive_attr_t *attr,
-        data_type_t bias_dt, const memory_desc_t *dst_md, bool skip_sum) {
+        data_type_t bias_dt, const memory_desc_t *dst_md, bool skip_sum, bool pcomp) {
 #if DNNL_X64
     auto *res = x64::inner_product_utils::jit_pp_kernel_create<acc_type,
-            dst_type>(OC, MB, dst_mb_stride, attr, bias_dt, dst_md, skip_sum);
+            dst_type>(OC, MB, dst_mb_stride, attr, bias_dt, dst_md, skip_sum,
+                pcomp);
     if (res) return res;
 #endif
 

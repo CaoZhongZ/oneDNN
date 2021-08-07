@@ -43,7 +43,7 @@ struct jit_pp_kernel_t : public pp_kernel_t<acc_type, dst_type>,
 
     jit_pp_kernel_t(size_t OC, size_t MB, dim_t dst_mb_stride,
             const primitive_attr_t *attr, data_type_t bias_dt,
-            const memory_desc_t *dst_md, bool skip_sum);
+            const memory_desc_t *dst_md, bool skip_sum, bool pcomp = false);
 
     using acc_data_t = typename prec_traits<acc_type>::type;
     using dst_data_t = typename prec_traits<dst_type>::type;
@@ -171,6 +171,7 @@ private:
     Xbyak::Zmm bf16_emu_reserv_3 = Xbyak::Zmm(30);
     Xbyak::Reg64 bf16_emu_reserv_4 = reg_tmp_comp;
     Xbyak::Zmm bf16_emu_reserv_5 = Xbyak::Zmm(31);
+    Xbyak::Zmm precompensation = bf16_emu_reserv_5;
 
     const int default_OC_loop_unroll_ = is_avx512_ ? 4 : 3;
     int max_OC_loop_unroll_ = 13;
@@ -266,9 +267,9 @@ private:
 template <cpu_isa_t isa, data_type_t acc_type, data_type_t dst_type>
 jit_pp_kernel_t<isa, acc_type, dst_type>::jit_pp_kernel_t(size_t OC, size_t MB,
         dim_t dst_mb_stride, const primitive_attr_t *attr, data_type_t bias_dt,
-        const memory_desc_t *dst_md, bool skip_sum)
+        const memory_desc_t *dst_md, bool skip_sum, bool pcomp)
     : pp_kernel_t<acc_type, dst_type>(
-            OC, MB, dst_mb_stride, attr, bias_dt, dst_md->ndims, skip_sum) {
+            OC, MB, dst_mb_stride, attr, bias_dt, dst_md->ndims, skip_sum, pcomp) {
     assert(IMPLICATION(dst_type == data_type::bf16, mayiuse(avx512_core)));
     assert(isa != avx512_common);
 
@@ -583,7 +584,11 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::cvt_and_store(
     auto v_src = tail ? v | kreg_rem_mask : v;
     const Xbyak::Address dst = get_address(arg_num, off);
     switch (dt) {
-        case s8: vpmovsdb(dst, v_src); break;
+        case s8:
+          if (this->do_precompensation) {
+            vpaddb(v_src, v_src, this->precompensation);
+          }
+          vpmovsdb(dst, v_src); break;
         case u8: vpmovusdb(dst, v_src); break;
         case f32:
         case s32: uni_vmovups(dst, v_src); break;
@@ -1129,6 +1134,11 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::generate() {
         mov(reg_oc, ptr[reg_param + PARAM_OFF(dst_zero_points)]);
         uni_vbroadcastss(vreg_dst_zero_points, ptr[reg_oc]);
     }
+    // HACK, do precompensation
+    if (this->do_precompensation) {
+        mov(reg_oc.cvt32(), 0x80808080);
+        vbroadcastsd(this->precompensation, reg_oc.cvt32());
+    }
     if (this->runtime_oc())
         mov(reg_oc, ptr[reg_param + PARAM_OFF(oc)]);
     else
@@ -1254,13 +1264,13 @@ void jit_pp_kernel_t<isa, acc_type, dst_type>::operator()(dst_data_t *dst,
 template <data_type_t acc_type, data_type_t dst_type>
 pp_kernel_t<acc_type, dst_type> *jit_pp_kernel_create(size_t OC, size_t MB,
         dim_t dst_mb_stride, const primitive_attr_t *attr, data_type_t bias_dt,
-        const memory_desc_t *dst_md, bool skip_sum) {
+        const memory_desc_t *dst_md, bool skip_sum, bool pcomp) {
     if (mayiuse(avx512_core_bf16)) {
         return new jit_pp_kernel_t<avx512_core_bf16, acc_type, dst_type>(
                 OC, MB, dst_mb_stride, attr, bias_dt, dst_md, skip_sum);
     } else if (mayiuse(avx512_core)) {
         return new jit_pp_kernel_t<avx512_core, acc_type, dst_type>(
-                OC, MB, dst_mb_stride, attr, bias_dt, dst_md, skip_sum);
+                OC, MB, dst_mb_stride, attr, bias_dt, dst_md, skip_sum, pcomp);
     } else if (mayiuse(avx2)) {
         return new jit_pp_kernel_t<avx2, acc_type, dst_type>(
                 OC, MB, dst_mb_stride, attr, bias_dt, dst_md, skip_sum);
@@ -1276,7 +1286,7 @@ pp_kernel_t<acc_type, dst_type> *jit_pp_kernel_create(size_t OC, size_t MB,
     template pp_kernel_t<acc_type, dst_type> * \
     jit_pp_kernel_create<acc_type, dst_type>(size_t OC, size_t MB, \
             dim_t dst_mb_stride, const primitive_attr_t *attr, \
-            data_type_t bias_dt, const memory_desc_t *dst_md, bool skip_sum);
+            data_type_t bias_dt, const memory_desc_t *dst_md, bool skip_sum, bool);
 
 using namespace data_type;
 INST(f32, f32);
