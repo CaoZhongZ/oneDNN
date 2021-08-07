@@ -162,6 +162,7 @@ struct brgemm_t {
     bool with_binary = false;
     bool with_scales = false;
     bool req_s8s8_compensation = false;
+    bool skip_input_s8_compensation = false;
     brgemm_broadcast_t zp_type_a = brgemm_broadcast_t::none;
     brgemm_broadcast_t zp_type_b = brgemm_broadcast_t::none;
     brgemm_broadcast_t zp_type_c = brgemm_broadcast_t::none;

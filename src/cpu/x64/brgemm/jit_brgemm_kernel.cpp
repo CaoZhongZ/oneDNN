@@ -1279,8 +1279,9 @@ void jit_brgemm_kernel_base_t::gemm_microkernel_avx512(int bd_block2,
             else if (brg.is_bf16 || brg.is_int8)
                 vpbroadcastd(z1, ptr[reg_aux_A + offset]);
         }
-
-        if (brg.req_s8s8_compensation) vpaddb(z1, z1, zmm_inp_shift());
+        // HACK !! Pre-compensate BRGEMM input at last quant
+        if (brg.req_s8s8_compensation && !brg.skip_input_s8_compensation)
+            vpaddb(z1, z1, zmm_inp_shift());
     };
 
     bool maybe_load_bytes = (rows_for_rd_tail > 0 || brg.brgattr.wary_tail_read)
@@ -1538,8 +1539,8 @@ void jit_brgemm_kernel_base_t::ldb_loop(int bd_block2, bool is_bdb_tail,
                 mov(reg_stride_lda, brg.typesize_A * brg.LDA);
                 mov(reg_stride_ldb, brg.rd_step * brg.typesize_B * brg.LDB);
             }
-
-            if (brg.req_s8s8_compensation) {
+            // HACK!!
+            if (brg.req_s8s8_compensation && !brg.skip_input_s8_compensation) {
                 mov(ptr[rsp + reg_bdb_loop_offs_], reg_bdb_loop);
                 mov(reg_s8_input_shift, 128);
                 vpbroadcastb(zmm_inp_shift(), reg_s8_input_shift.cvt8());

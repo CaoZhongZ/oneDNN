@@ -106,6 +106,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                         jbgp_.wei_dt, false, false, brgemm_row_major, alpha,
                         vbeta, jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK));
 
+                adjust_compensation(&brg);
+
                 auto LDD = jbgp_.oc_without_padding;
                 CHECK(brgemm_desc_set_postops(
                         &brg, attr(), &dst_md_, LDD, jbgp_.bia_dt));
@@ -149,6 +151,16 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
 
         brgemm_t brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
         jit_brgemm_primitive_conf_t jbgp_;
+    private:
+        // HACK use forward training signal pre-compensation
+        bool skip_compensation() {
+            return desc_.prop_kind == prop_kind::forward_training;
+        }
+
+        void adjust_compensation(brgemm_t *brg) {
+            brg->skip_input_s8_compensation = brg->req_s8s8_compensation
+                && skip_compensation();
+        }
     };
 
     brgemm_inner_product_fwd_t(const pd_t *apd) : primitive_t(apd) {}
