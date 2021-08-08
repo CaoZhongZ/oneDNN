@@ -38,18 +38,33 @@ struct static_params_t {
     static_params_t(bool save_state = true,
             Xbyak::Reg64 p_table = Xbyak::util::rax,
             Xbyak::Opmask k_mask = Xbyak::Opmask(1), bool is_fwd = true,
-            bool use_dst = false)
+            bool use_dst = false,
+            Xbyak::Reg64 p_param = Xbyak::util::rdi,
+            size_t dynamic_scale_off = -1)
         : save_state(save_state)
         , p_table(p_table)
+        , p_param(p_param)
         , k_mask(k_mask)
         , is_fwd(is_fwd)
-        , use_dst(use_dst) {}
+        , use_dst(use_dst)
+        , dynamic_scale_off(dynamic_scale_off) {}
+
+    static_params_t(size_t dynamic_scale_off)
+        : save_state(true)
+        , p_table(Xbyak::util::rax)
+        , p_param(Xbyak::util::rdi)
+        , k_mask(Xbyak::Opmask(1))
+        , is_fwd(true)
+        , use_dst(false)
+        , dynamic_scale_off(dynamic_scale_off) {}
 
     bool save_state;
     Xbyak::Reg64 p_table;
+    Xbyak::Reg64 p_param;
     Xbyak::Opmask k_mask;
     bool is_fwd;
     bool use_dst;
+    size_t dynamic_scale_off;
 };
 
 /*
@@ -86,17 +101,23 @@ struct jit_uni_eltwise_injector_f32 {
     // use_dst - defines whether source or destination point is passed to alg
     //   code. Depends on algorithm. See `_use_dst_for_bwd` algs definition.
     jit_uni_eltwise_injector_f32(jit_generator *host, alg_kind_t alg,
-            float alpha, float beta, float scale, bool save_state = true,
+            float alpha, float beta, float scale,
+            bool save_state = true,
             Xbyak::Reg64 p_table = Xbyak::util::rax,
             Xbyak::Opmask k_mask = Xbyak::Opmask(1), bool is_fwd = true,
-            bool use_dst = false)
+            bool use_dst = false,
+            // HACK
+            Xbyak::Reg64 p_param = Xbyak::util::rdi,
+            size_t dynamic_scale_off = -1)
         : alg_(alg)
         , alpha_(alpha)
         , beta_(beta)
         , scale_(scale)
+        , dynamic_scale_off(dynamic_scale_off)
         , h(host)
         , save_state_(save_state)
         , p_table(p_table)
+        , p_param(p_param)
         , k_mask(k_mask)
         , is_fwd_(is_fwd)
         , use_dst_(use_dst) {
@@ -109,10 +130,12 @@ struct jit_uni_eltwise_injector_f32 {
             const post_ops_t::entry_t::eltwise_t &eltwise,
             bool save_state = true, Xbyak::Reg64 p_table = Xbyak::util::rax,
             Xbyak::Opmask k_mask = Xbyak::Opmask(1), bool is_fwd = true,
-            bool use_dst = false)
+            bool use_dst = false,
+            Xbyak::Reg64 p_param = Xbyak::util::rdi,
+            size_t dynamic_scale_off = -1)
         : jit_uni_eltwise_injector_f32(host, eltwise.alg, eltwise.alpha,
                 eltwise.beta, eltwise.scale, save_state, p_table, k_mask,
-                is_fwd, use_dst) {}
+                is_fwd, use_dst, p_param, dynamic_scale_off) {}
 
     void compute_vector_range(size_t start_idx, size_t end_idx);
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs);
@@ -125,11 +148,13 @@ private:
     const float alpha_;
     const float beta_;
     const float scale_;
+    const size_t dynamic_scale_off;
 
     jit_generator *const h;
 
     const bool save_state_;
     const Xbyak::Reg64 p_table;
+    const Xbyak::Reg64 p_param;
     const Xbyak::Opmask k_mask;
     const bool is_fwd_;
     const bool use_dst_;
@@ -296,6 +321,10 @@ private:
     Xbyak::Address table_val(key_t key, size_t key_off_val_shift = 0) {
         auto off = table_off(key, key_off_val_shift);
         return h->ptr[p_table + off];
+    }
+    // HACK: Get scale in stack frame, signaled when p_param != p_table
+    Xbyak::Address stack_val(size_t off) {
+        return h->ptr[p_param + off + 8];
     }
 
     // we accept only 32bit hexadecimal table values to avoid any rounding

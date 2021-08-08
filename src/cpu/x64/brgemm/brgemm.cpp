@@ -90,6 +90,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.ptr_buf = scratch;
     brgemm_p.ptr_bias = post_ops_data.bias;
     brgemm_p.ptr_scales = post_ops_data.scales;
+    brgemm_p.f_scale = post_ops_data.f_scale;
+    brgemm_p.dummy = post_ops_data.f_scale;
     brgemm_p.do_post_ops = 1;
     brgemm_p.skip_accm = post_ops_data.skip_accumulation ? 1 : 0;
     brgemm_p.BS = bs;

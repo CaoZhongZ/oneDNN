@@ -73,6 +73,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
 
     DEFINE_SCALES_BUFFER(oscales);
+    const float final_scale {1.f};
 
     const auto &jbgp = pd()->jbgp_;
     const bool is_f32 = everyone_is(f32, jbgp.src_dt, jbgp.wei_dt, jbgp.dst_dt);
@@ -208,6 +209,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 const brgemm_post_ops_data_t post_ops_data {
                         static_cast<const void *>(ptr_bias),
                         &oscales[jbgp.is_oc_scale * oc],
+                        final_scale,
                         post_ops_binary_rhs_arg_vec.data(),
                         static_cast<size_t>(oc), 0, dst};
 
@@ -251,6 +253,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 const brgemm_post_ops_data_t post_ops_data {
                         static_cast<const void *>(ptr_bias),
                         &oscales[jbgp.is_oc_scale * oc],
+                        final_scale,
                         post_ops_binary_rhs_arg_vec.data(),
                         static_cast<size_t>(oc)};
 
@@ -441,6 +444,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                             const brgemm_post_ops_data_t post_ops_data {
                                     static_cast<const void *>(ptr_bias),
                                     &oscales[jbgp.is_oc_scale * oc],
+                                    final_scale,
                                     post_ops_binary_rhs_arg_vec.data(),
                                     static_cast<size_t>(oc), 0, dst, 0, nullptr,
                                     nullptr, nullptr, true /* skip_accm */};

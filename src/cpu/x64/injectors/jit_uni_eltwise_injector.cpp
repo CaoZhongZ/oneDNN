@@ -109,6 +109,11 @@ void jit_uni_eltwise_injector_f32<isa>::injector_preamble(
     assert(preserved_gprs_count == aux_gprs_count());
 
     if (save_state_) {
+        // HACK!!!
+        if (dynamic_scale_off != -1) {
+          h->push(p_param);
+          h->mov(p_param, h->rsp);
+        }
         h->push(p_table);
         for (size_t i = 0; i < preserved_gprs_count; ++i)
             h->push(Reg64(preserved_gpr_idxs[i]));
@@ -168,6 +173,11 @@ void jit_uni_eltwise_injector_f32<isa>::injector_postamble() {
     for (int i = aux_gprs_count() - 1; i >= 0; --i)
         h->pop(Reg64(preserved_gpr_idxs[i]));
     h->pop(p_table);
+
+    // HACK, restore stack
+    if (dynamic_scale_off != 0) {
+      h->pop(p_param);
+    }
 }
 
 template <cpu_isa_t isa>
@@ -1713,7 +1723,11 @@ void jit_uni_eltwise_injector_f32<isa>::compute_body(
             }
         }
         if (scale_ != 1.f) {
+          if (dynamic_scale_off != -1) {
+            h->uni_vmulps(Vmm(idx), Vmm(idx), stack_val(dynamic_scale_off));
+          } else {
             h->uni_vmulps(Vmm(idx), Vmm(idx), table_val(scale));
+          }
         }
     });
 }

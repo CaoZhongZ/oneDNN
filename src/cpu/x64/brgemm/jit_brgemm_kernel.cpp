@@ -66,9 +66,13 @@ struct jit_brgemm_kernel_base_t : public jit_generator {
             const binary_injector::static_params_t bsp {
                     this->param1, enabled_bcast_strategy, rhs_sp};
 
+            const eltwise_injector::static_params_t esp {
+                (size_t) reg_final_scale_offs
+            };
+
             postops_injector_ = utils::make_unique<
                     injector::jit_uni_postops_injector_t<avx512_core>>(
-                    this, brg.attr->post_ops_, bsp);
+                    this, brg.attr->post_ops_, bsp, esp);
 
             using namespace dnnl::impl::cpu::binary_injector_utils;
             std::tie(with_binary_per_oc_bcast_, with_binary_per_oc_sp_bcast_,
@@ -185,7 +189,8 @@ private:
     constexpr static int reg_aux_zp_c_values_offs_ = 176;
     constexpr static int reg_data_C_ptr_ = 184;
     constexpr static int reg_skip_accm_offs_ = 192;
-    constexpr static int stack_space_needed_ = 200;
+    constexpr static int reg_final_scale_offs = 200;
+    constexpr static int stack_space_needed_ = 208;
 
     bool is_ldb_loop;
     bool handle_binary_po_offset_ = false;
@@ -476,6 +481,8 @@ void jit_brgemm_kernel_base_t::read_params() {
         mov(ptr[rsp + reg_bias_offs_], reg_bias);
     }
     if (brg.with_scales) {
+        mov(reg_scales, ptr[param1 + GET_OFF(f_scale)]);
+        mov(ptr[rsp + reg_final_scale_offs], reg_scales);
         mov(reg_scales, ptr[param1 + GET_OFF(ptr_scales)]);
         mov(ptr[rsp + reg_scales_offs_], reg_scales);
     }

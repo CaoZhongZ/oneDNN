@@ -203,6 +203,8 @@ struct brgemm_kernel_params_t {
     void *ptr_D;
 
     const void *ptr_scales;
+    float f_scale;
+    float dummy;  /* HACK, for alignment */
     void *ptr_buf;
 
     size_t do_post_ops;
@@ -278,8 +280,30 @@ struct brgemm_post_ops_data_t {
         , c_zp_values(c_zp_values)
         , skip_accumulation(skip_accumulation) {}
 
+    brgemm_post_ops_data_t(const void *bias, const float *scales,
+            const float f_scale,
+            const void *binary_post_ops_rhs, size_t oc_logical_off,
+            const size_t dst_row_logical_off = 0, char *data_C_ptr_ = nullptr,
+            const size_t first_mb_matrix_addr_off = 0,
+            const void *a_zp_compensations = nullptr,
+            const void *b_zp_compensations = nullptr,
+            const void *c_zp_values = nullptr, bool skip_accumulation = false)
+        : bias(bias)
+        , scales(scales)
+        , f_scale(f_scale)
+        , binary_post_ops_rhs(binary_post_ops_rhs)
+        , oc_logical_off(oc_logical_off)
+        , dst_row_logical_off(dst_row_logical_off)
+        , data_C_ptr_(data_C_ptr_)
+        , first_mb_matrix_addr_off(first_mb_matrix_addr_off)
+        , a_zp_compensations(a_zp_compensations)
+        , b_zp_compensations(b_zp_compensations)
+        , c_zp_values(c_zp_values)
+        , skip_accumulation(skip_accumulation) {}
+
     const void *bias = nullptr;
     const float *scales = nullptr;
+    const float f_scale {1.f};
     const void *binary_post_ops_rhs = nullptr;
     size_t oc_logical_off = 0;
     size_t dst_row_logical_off = 0;
