@@ -837,6 +837,15 @@ void jit_brgemm_kernel_base_t::store_accumulators_apply_post_ops(
                 zmm_lbound, zmm_ubound, reg_tmp_gpr, data_type::f32, brg.dt_d, true);
     }
 
+    auto xmm_compensation = Xbyak::Xmm(zmm_tmp_3().getIdx());
+    if (brg.req_pre_compensation && brg.dt_d == data_type::s8) {
+        // Do we still need reg_bdb_loop???
+        mov(ptr[rsp + reg_bdb_loop_offs_], reg_bdb_loop);
+        mov(reg_s8_input_shift, 128);
+        vpbroadcastb(xmm_compensation, reg_s8_input_shift.cvt8());
+        mov(reg_bdb_loop, ptr[rsp + reg_bdb_loop_offs_]);
+    }
+
     for (int bd = 0; bd < bd_block; bd++) {
         if (dt_requires_saturation) {
             for (int ld = 0; ld < ld_block2; ld++) {
@@ -863,7 +872,7 @@ void jit_brgemm_kernel_base_t::store_accumulators_apply_post_ops(
                     if (brg.req_pre_compensation) {
                         auto xmm = Xbyak::Xmm(zmm.getIdx());
                         vpmovsdb(xmm, zmm);
-                        vpxord(xmm, xmm, Xbyak::Xmm(zmm_inp_shift().getIdx()));
+                        vpxord(xmm, xmm, xmm_compensation);
                         auto r_addr = addr | k_mask;
                         vmovdqu8(r_addr, xmm);
                     } else {
@@ -1568,8 +1577,7 @@ void jit_brgemm_kernel_base_t::ldb_loop(int bd_block2, bool is_bdb_tail,
             }
             // HACK!! input already compensated or output need compensation?
             if (brg.req_s8s8_compensation
-                    && (!brg.skip_input_s8_compensation
-                    || brg.req_pre_compensation)) {
+                    && !brg.skip_input_s8_compensation) {
                 mov(ptr[rsp + reg_bdb_loop_offs_], reg_bdb_loop);
                 mov(reg_s8_input_shift, 128);
                 vpbroadcastb(zmm_inp_shift(), reg_s8_input_shift.cvt8());
