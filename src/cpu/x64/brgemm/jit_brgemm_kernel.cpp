@@ -234,6 +234,8 @@ private:
             Xbyak::Opmask ktail_mask) const;
     Xbyak::Ymm ymm_mask(const Xbyak::Ymm ymm_in, bool mask_flag, bool store,
             Xbyak::Opmask ktail_mask) const;
+    Xbyak::Xmm xmm_mask(const Xbyak::Xmm xmm_in, bool mask_flag, bool store,
+            Xbyak::Opmask ktail_mask) const;
 
     void cvt2ps(data_type_t type_in, const Xbyak::Zmm zmm_in,
             const Xbyak::Operand &op, bool mask_flag, bool store,
@@ -419,6 +421,12 @@ Xbyak::Ymm jit_brgemm_kernel_base_t::ymm_mask(const Xbyak::Ymm ymm_in,
         bool mask_flag, bool store, Xbyak::Opmask ktail_mask) const {
     return mask_flag ? (store ? ymm_in | ktail_mask : ymm_in | ktail_mask | T_z)
                      : ymm_in;
+}
+
+Xbyak::Xmm jit_brgemm_kernel_base_t::xmm_mask(const Xbyak::Xmm xmm_in,
+        bool mask_flag, bool store, Xbyak::Opmask ktail_mask) const {
+    return mask_flag ? (store ? xmm_in | ktail_mask : xmm_in | ktail_mask | T_z)
+                     : xmm_in;
 }
 
 void jit_brgemm_kernel_base_t::cvt2ps(data_type_t type_in,
@@ -850,7 +858,19 @@ void jit_brgemm_kernel_base_t::store_accumulators_apply_post_ops(
                     vcvtneps2bf16(ymm, zmm);
                     vmovdqu16(addr, r_ymm);
                     break;
-                case data_type::s8: vpmovsdb(addr, r_zmm); break;
+                case data_type::s8: {
+                    // hack, may be two flags
+                    if (brg.req_pre_compensation) {
+                        auto xmm = Xbyak::Xmm(zmm.getIdx());
+                        vpmovsdb(xmm, zmm);
+                        vpxord(xmm, xmm, Xbyak::Xmm(zmm_inp_shift().getIdx()));
+                        auto r_addr = addr | k_mask;
+                        vmovdqu8(r_addr, xmm);
+                    } else {
+                        vpmovsdb(addr, r_zmm);
+                    }
+                    break;
+                }
                 case data_type::u8: vpmovusdb(addr, r_zmm); break;
                 default: assert(!"unknown dst_dt");
             }
@@ -1546,8 +1566,10 @@ void jit_brgemm_kernel_base_t::ldb_loop(int bd_block2, bool is_bdb_tail,
                 mov(reg_stride_lda, brg.typesize_A * brg.LDA);
                 mov(reg_stride_ldb, brg.rd_step * brg.typesize_B * brg.LDB);
             }
-            // HACK!!
-            if (brg.req_s8s8_compensation && !brg.skip_input_s8_compensation) {
+            // HACK!! input already compensated or output need compensation?
+            if (brg.req_s8s8_compensation
+                    && (!brg.skip_input_s8_compensation
+                    || brg.req_pre_compensation)) {
                 mov(ptr[rsp + reg_bdb_loop_offs_], reg_bdb_loop);
                 mov(reg_s8_input_shift, 128);
                 vpbroadcastb(zmm_inp_shift(), reg_s8_input_shift.cvt8());

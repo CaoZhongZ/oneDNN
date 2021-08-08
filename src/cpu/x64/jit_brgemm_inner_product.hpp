@@ -168,9 +168,17 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             return desc_.prop_kind == prop_kind::forward_training;
         }
 
+        // HACK, if forward training with eltwise enabled
+        bool req_pre_compensation() {
+            return desc_.prop_kind == prop_kind::forward_training
+                && jbgp_.with_eltwise;
+        }
+
         void adjust_compensation(brgemm_t *brg) {
             brg->skip_input_s8_compensation = brg->req_s8s8_compensation
                 && skip_compensation();
+
+            brg->req_pre_compensation = req_pre_compensation();
         }
     };
 
