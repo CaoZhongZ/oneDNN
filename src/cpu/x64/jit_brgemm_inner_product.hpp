@@ -48,6 +48,17 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
         DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("brgemm:", isa, ""),
                 brgemm_inner_product_fwd_t);
 
+        arg_usage_t arg_usage(int arg) const override {
+            if (utils::one_of(arg, DNNL_ARG_SRC, DNNL_ARG_WEIGHTS, DNNL_ARG_SCALE))
+                return arg_usage_t::input;
+
+            if (arg == DNNL_ARG_BIAS && with_bias()) return arg_usage_t::input;
+
+            if (arg == DNNL_ARG_DST) return arg_usage_t::output;
+
+            return primitive_desc_t::arg_usage(arg);
+        }
+
         status_t init(engine_t *engine) {
             using namespace utils;
             using namespace data_type;

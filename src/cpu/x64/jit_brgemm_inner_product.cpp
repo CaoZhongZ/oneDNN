@@ -73,7 +73,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
 
     DEFINE_SCALES_BUFFER(oscales);
-    const float final_scale {1.f};
+    auto* pf_scale = CTX_IN_MEM(const float *, DNNL_ARG_SCALE);
+    auto final_scale = (pf_scale == nullptr) ? 1.f : *pf_scale;
 
     const auto &jbgp = pd()->jbgp_;
     const bool is_f32 = everyone_is(f32, jbgp.src_dt, jbgp.wei_dt, jbgp.dst_dt);

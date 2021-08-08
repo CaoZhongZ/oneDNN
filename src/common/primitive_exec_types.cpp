@@ -60,7 +60,7 @@ status_t cvt_primitive_args(const primitive_desc_t *pd, int nargs,
         }
     }
 
-    if (n_inputs != pd->n_inputs() + extra_inputs) return invalid_arguments;
+    // if (n_inputs != pd->n_inputs() + extra_inputs) return invalid_arguments;
     if (n_outputs != pd->n_outputs() + extra_outputs) return invalid_arguments;
 
     return success;
