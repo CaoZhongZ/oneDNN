@@ -407,7 +407,8 @@ inline bool is_eltwise_ok(
                       eltwise_logsigmoid, eltwise_mish, eltwise_logistic,
                       eltwise_exp, eltwise_gelu_tanh, eltwise_hardswish,
                       eltwise_swish, eltwise_log, eltwise_clip, eltwise_clip_v2,
-                      eltwise_pow, eltwise_gelu_erf, eltwise_round)
+                      eltwise_pow, eltwise_gelu_erf, eltwise_round,
+                      eltwise_gelu_erf_2dts)
             && IMPLICATION(alg == eltwise_bounded_relu, alpha >= 0)
             && IMPLICATION(
                     one_of(alg, eltwise_clip, eltwise_clip_v2), beta >= alpha)
