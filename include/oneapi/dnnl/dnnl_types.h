@@ -1236,6 +1236,8 @@ typedef enum {
     dnnl_eltwise_pow = 0x20,
     /// Eltwise: erf-based gelu
     dnnl_eltwise_gelu_erf = 0x30,
+    /// Eltwise: erf approximate gelu
+    dnnl_eltwise_gelu_erf_2dts = 0x35,
     /// Eltwise: round
     dnnl_eltwise_round = 0x40,
     /// Eltwise: logsigmoid

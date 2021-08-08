@@ -40,7 +40,7 @@ struct static_params_t {
             Xbyak::Opmask k_mask = Xbyak::Opmask(1), bool is_fwd = true,
             bool use_dst = false,
             Xbyak::Reg64 p_param = Xbyak::util::rdi,
-            size_t dynamic_scale_off = -1)
+            ssize_t dynamic_scale_off = -1)
         : save_state(save_state)
         , p_table(p_table)
         , p_param(p_param)
@@ -64,7 +64,7 @@ struct static_params_t {
     Xbyak::Opmask k_mask;
     bool is_fwd;
     bool use_dst;
-    size_t dynamic_scale_off;
+    ssize_t dynamic_scale_off;
 };
 
 /*
@@ -108,7 +108,7 @@ struct jit_uni_eltwise_injector_f32 {
             bool use_dst = false,
             // HACK
             Xbyak::Reg64 p_param = Xbyak::util::rdi,
-            size_t dynamic_scale_off = -1)
+            ssize_t dynamic_scale_off = -1)
         : alg_(alg)
         , alpha_(alpha)
         , beta_(beta)
@@ -132,7 +132,7 @@ struct jit_uni_eltwise_injector_f32 {
             Xbyak::Opmask k_mask = Xbyak::Opmask(1), bool is_fwd = true,
             bool use_dst = false,
             Xbyak::Reg64 p_param = Xbyak::util::rdi,
-            size_t dynamic_scale_off = -1)
+            ssize_t dynamic_scale_off = -1)
         : jit_uni_eltwise_injector_f32(host, eltwise.alg, eltwise.alpha,
                 eltwise.beta, eltwise.scale, save_state, p_table, k_mask,
                 is_fwd, use_dst, p_param, dynamic_scale_off) {}
@@ -148,7 +148,7 @@ private:
     const float alpha_;
     const float beta_;
     const float scale_;
-    const size_t dynamic_scale_off;
+    const ssize_t dynamic_scale_off;
 
     jit_generator *const h;
 
@@ -233,6 +233,7 @@ private:
     void clip_compute_vector_fwd(const Vmm &vmm_src);
     void pow_compute_vector_fwd(const Vmm &vmm_src);
     void gelu_erf_compute_vector_fwd(const Vmm &vmm_src);
+    void gelu_erf_2dts_compute_vector_fwd(const Vmm &vmm_src);
     void round_compute_vector_fwd(const Vmm &vmm_src);
     void hardswish_compute_vector_fwd(const Vmm &vmm_src);
 
@@ -297,6 +298,10 @@ private:
         gelu_erf_one_over_sqrt_two, // 1.f / sqrtf(2.f)
         gelu_erf_one_over_sqrt_pi, // 1.f / sqrtf(pi) = 0.564190f
         gelu_erf_pol, // see correspondent table for float values
+        gelu_erf_a, // -0.2888f
+        gelu_erf_b, // 1.0217744f
+        gelu_erf_c, // 0.0962405432f
+        gelu_erf_nb, // 1.769f
         log_minus_inf, // -inf
         log_qnan, // qnan
         log_mantissa_mask, // gets mantissa bits

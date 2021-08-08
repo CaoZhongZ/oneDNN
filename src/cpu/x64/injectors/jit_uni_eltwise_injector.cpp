@@ -43,7 +43,7 @@ bool is_alg_supported(alg_kind_t alg) {
             eltwise_relu_use_dst_for_bwd, eltwise_tanh_use_dst_for_bwd,
             eltwise_elu_use_dst_for_bwd, eltwise_sqrt_use_dst_for_bwd,
             eltwise_logistic_use_dst_for_bwd, eltwise_exp_use_dst_for_bwd,
-            eltwise_clip_v2_use_dst_for_bwd);
+            eltwise_clip_v2_use_dst_for_bwd, eltwise_gelu_erf_2dts);
 }
 
 bool is_supported(cpu_isa_t isa, alg_kind_t alg) {
@@ -70,7 +70,7 @@ void jit_uni_eltwise_injector_f32<isa>::injector_preamble(
             && utils::one_of(alg_, eltwise_tanh, eltwise_elu, eltwise_abs,
                     eltwise_soft_relu, eltwise_logsigmoid, eltwise_mish,
                     eltwise_logistic, eltwise_exp, eltwise_gelu_tanh,
-                    eltwise_swish, eltwise_gelu_erf,
+                    eltwise_swish, eltwise_gelu_erf, eltwise_gelu_erf_2dts,
                     eltwise_tanh_use_dst_for_bwd, eltwise_elu_use_dst_for_bwd,
                     eltwise_logistic_use_dst_for_bwd,
                     eltwise_exp_use_dst_for_bwd);
@@ -1160,6 +1160,39 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
 }
 
 template <cpu_isa_t isa>
+void jit_uni_eltwise_injector_f32<isa>::gelu_erf_2dts_compute_vector_fwd(
+        const Vmm &vmm_src) {
+    // Compute gelu using 2nd order polynormial solution
+    // Parameters from libxsmm and i-bert
+
+    // aux1 = x * rsqrt(2)
+    h->uni_vmulps(vmm_aux1, vmm_src, table_val(gelu_erf_one_over_sqrt_two));
+    // aux3 = x * rsqrt(2)
+    h->uni_vmovups(vmm_aux3, vmm_aux1);
+    // aux0 get sign
+    h->uni_vandps(vmm_aux0, vmm_aux1, table_val(sign_mask));
+
+    // aux1 = abs(x * rsqrt(2))
+    abs_compute_vector_fwd(vmm_aux1);
+    // aux2 = confine aux1 in [0, nb)
+    h->uni_vminps(vmm_aux2, vmm_aux1, table_val(gelu_erf_nb));
+
+    // compute 2nd order polynomial
+    // abs_erf = (a * aux2 + b) * aux2 + c
+    h->uni_vmovups(vmm_aux1, table_val(gelu_erf_a));
+    h->uni_vfmadd213ps(vmm_aux1, vmm_aux2, table_val(gelu_erf_b));
+    h->uni_vfmadd213ps(vmm_aux1, vmm_aux2, table_val(gelu_erf_c));
+
+    // sign erf
+    h->uni_vxorps(vmm_src, vmm_aux1, vmm_aux0);
+
+    // S = 0.5 * s = x / sqrt^2(2)
+    h->uni_vmulps(vmm_aux3, vmm_aux3, table_val(gelu_erf_one_over_sqrt_two));
+    // GELU = 0.5 * s * (1 + erf) = S + S * erf
+    h->uni_vfmadd213ps(vmm_src, vmm_aux3, vmm_aux3);
+}
+
+template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::relu_compute_vector_bwd(
         const Vmm &vmm_src) {
     // invariant to whether `s` or `d` is passed.
@@ -1576,6 +1609,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_clip_v2: return 0;
             case eltwise_pow: return 2;
             case eltwise_gelu_erf: return 5;
+            case eltwise_gelu_erf_2dts: return 5; // Maybe 4???
             case eltwise_round: return 0;
             case eltwise_hardswish: return 1;
             default: assert(!"unsupported eltwise algorithm");
@@ -1668,6 +1702,9 @@ void jit_uni_eltwise_injector_f32<isa>::compute_body(
                 case eltwise_pow: pow_compute_vector_fwd(Vmm(idx)); break;
                 case eltwise_gelu_erf:
                     gelu_erf_compute_vector_fwd(Vmm(idx));
+                    break;
+                case eltwise_gelu_erf_2dts:
+                    gelu_erf_2dts_compute_vector_fwd(Vmm(idx));
                     break;
                 case eltwise_round: round_compute_vector_fwd(Vmm(idx)); break;
                 case eltwise_hardswish:
@@ -2120,6 +2157,14 @@ void jit_uni_eltwise_injector_f32<isa>::register_table_entries() {
             {gelu_erf_pol, {0x3f87dc22, true}}, // p5 = 1.061405429f
     };
 
+    // gelu_erf(x) low-precision polynomial approximation
+    static const table_t gelu_erf_2dts {
+            {gelu_erf_a, {0xbe93dd98, true}}, // a = -0.2888f
+            {gelu_erf_b, {0x3f82c981, true}}, // b = 1.0217744f
+            {gelu_erf_c, {0x3dc519c3, true}}, // c = 0.0962405432f
+            {gelu_erf_nb, {0x3fe26e98, true}}, // nb = 1.769f
+    };
+
     // log(x) constants
     static const table_t log_consts {
             {log_minus_inf, {0xff800000, true}},
@@ -2253,6 +2298,7 @@ void jit_uni_eltwise_injector_f32<isa>::register_table_entries() {
                 case eltwise_logistic:
                 case eltwise_swish: exp_ = true; break;
                 case eltwise_gelu_erf: gelu_erf_ = true; break;
+                case eltwise_gelu_erf_2dts: gelu_erf_ = true; break;
                 case eltwise_gelu_tanh: gelu_tanh_ = true; break;
                 case eltwise_log: log_ = true; break;
                 case eltwise_soft_relu: soft_relu_ = true; break;
@@ -2312,8 +2358,13 @@ void jit_uni_eltwise_injector_f32<isa>::register_table_entries() {
     if (need.soft_relu()) push_entries_of(soft_relu_consts);
     if (need.soft_relu()) push_entries_of(soft_relu_polynomial);
     if (need.gelu_tanh()) push_entries_of(gelu_tanh_consts);
-    if (need.gelu_erf()) push_entries_of(gelu_erf_consts);
-    if (need.gelu_erf()) push_entries_of(gelu_erf_polynomial);
+
+    if (need.gelu_erf()) {
+      push_entries_of(gelu_erf_consts);
+      push_entries_of(gelu_erf_polynomial);
+      push_entries_of(gelu_erf_2dts);
+    }
+
     if (need.log()) push_entries_of(log_consts);
     if (need.log()) push_entries_of(log_polynomial);
     if (need.log()) push_entries_of(log_predefined_values);

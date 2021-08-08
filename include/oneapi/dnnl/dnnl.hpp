@@ -516,6 +516,8 @@ enum class algorithm {
     eltwise_gelu_tanh = dnnl_eltwise_gelu_tanh,
     /// Elementwise: erf-based gelu
     eltwise_gelu_erf = dnnl_eltwise_gelu_erf,
+    /// Elementwise: erf-based gelu
+    eltwise_gelu_erf_2dts = dnnl_eltwise_gelu_erf_2dts,
     /// Elementwise: natural logarithm
     eltwise_log = dnnl_eltwise_log,
     /// Elementwise: clip
