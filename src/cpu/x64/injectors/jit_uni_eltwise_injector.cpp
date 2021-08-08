@@ -1724,7 +1724,8 @@ void jit_uni_eltwise_injector_f32<isa>::compute_body(
         }
         if (scale_ != 1.f) {
           if (dynamic_scale_off != -1) {
-            h->uni_vmulps(Vmm(idx), Vmm(idx), stack_val(dynamic_scale_off));
+            // HACK, only for AVX512F +
+            h->vmulps(Vmm(idx), Vmm(idx), stack_val(dynamic_scale_off));
           } else {
             h->uni_vmulps(Vmm(idx), Vmm(idx), table_val(scale));
           }

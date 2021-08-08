@@ -320,11 +320,11 @@ private:
     }
     Xbyak::Address table_val(key_t key, size_t key_off_val_shift = 0) {
         auto off = table_off(key, key_off_val_shift);
-        return h->zword_b[p_table + off];
+        return h->ptr[p_table + off];
     }
     // HACK: Get scale in stack frame, signaled when p_param != p_table
     Xbyak::Address stack_val(size_t off) {
-        return h->ptr[p_param + off + 8];
+        return h->zword_b[p_param + off + 8];
     }
 
     // we accept only 32bit hexadecimal table values to avoid any rounding
